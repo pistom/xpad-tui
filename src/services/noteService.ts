@@ -59,6 +59,9 @@ export async function saveNote(note: Note): Promise<void> {
 }
 
 export async function createNote(dir: string, title: string | undefined, content: string): Promise<Note> {
+  // Ensure directory exists
+  await fs.mkdir(dir, { recursive: true });
+  
   const id = `content-${Math.random().toString(36).slice(2, 8)}`;
   const filePath = path.join(dir, id);
   const toWrite = content || title || '';

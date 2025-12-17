@@ -32,7 +32,7 @@ export default function ConfigEditor({
     >
       <Text bold>Application configuration</Text>
       <Box flexDirection="row" width="100%">
-        <Text color="gray">Editor command (overrides $EDITOR): </Text>
+        <Text color="gray">Editor command (default nano): </Text>
         <TextInput
           isDisabled={focusedField !== 'editor'}
           defaultValue={editorValue}

@@ -11,11 +11,13 @@ program
   .name('xpad-tui')
   .description('TUI to manage xpad sticky notes')
   .option('-d, --dir <dir>', 'xpad notes directory')
-  .option('-E, --editor <editor>', 'editor command to use for editing notes (overrides $EDITOR)')
+  .option('-e, --editor <editor>', 'editor command to use for editing notes')
   .action(async (opts) => {
-    const editor = opts.editor as string | undefined;
     const cfg = await loadConfig();
+    
+    // CLI args have highest priority, then config file, then defaults
     const dir = opts.dir || resolveNotesDir(cfg);
+    const cliEditor = opts.editor; // Only pass CLI arg, let App compute effective editor
 
     // Switch to the alternate screen buffer so the original terminal contents
     // are preserved and automatically restored on exit when we leave the
@@ -43,7 +45,7 @@ program
     // Also ensure we restore on normal exit
     process.on('exit', () => { try { exitAlt(); } catch (_) { } });
 
-    render(React.createElement(App, { dir, editor }));
+    render(React.createElement(App, { dir, cliEditor }));
   });
 
 program.parse(process.argv);

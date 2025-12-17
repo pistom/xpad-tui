@@ -38,6 +38,7 @@ export type NoteInfo = {
 
 export type PaneFocus = 'list' | 'note';
 export type ConfigFieldFocus = 'editor' | 'notesDir';
+export type SelectionMode = 'line' | 'char';
 
 export type InkKey = {
   ctrl?: boolean;

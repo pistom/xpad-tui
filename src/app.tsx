@@ -20,15 +20,23 @@ import {
   shouldShowControls,
   shouldStartConfigEdit,
   shouldQuit,
+  moveCharLeft as moveCharLeftUtil,
+  moveCharRight as moveCharRightUtil,
+  moveCharUp as moveCharUpUtil,
+  moveCharDown as moveCharDownUtil,
+  moveWordForward as moveWordForwardUtil,
+  moveWordBackward as moveWordBackwardUtil,
+  moveToLineStart as moveToLineStartUtil,
+  moveToLineEnd as moveToLineEndUtil,
 } from './handlers/keyboardHandlers.js';
 import type { Note, InkKey, PaneFocus, ConfigFieldFocus } from './types/index.js';
 
 type AppProps = { 
   dir: string; 
-  editor?: string;
+  cliEditor?: string;
 };
 
-export default function App({ dir, editor }: AppProps): React.ReactElement {
+export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
   const { exit } = useApp();
   const [columns, rows] = useTerminalSize();
   
@@ -45,6 +53,9 @@ export default function App({ dir, editor }: AppProps): React.ReactElement {
     updateConfig
   } = useAppConfig(dir);
   
+  // Compute effective editor: CLI arg > config > env > default
+  const effectiveEditor = cliEditor || config.editor || process.env.EDITOR || 'vi';
+  
   const [showHidden, setShowHidden] = useState(false);
   const { notes, dirExists, reloadNotes } = useNotesList(effectiveDir, showHidden);
   const [idx, setIdx] = useState(0);
@@ -53,12 +64,20 @@ export default function App({ dir, editor }: AppProps): React.ReactElement {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pendingDeleteIdx, setPendingDeleteIdx] = useState<number | null>(null);
   const [configFocusedField, setConfigFocusedField] = useState<ConfigFieldFocus>('editor');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   const [selectionActive, setSelectionActive] = useState(false);
   const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
   const [selectionCursor, setSelectionCursor] = useState<number | null>(null);
+  const [selectionMode, setSelectionMode] = useState<'line' | 'char'>('line');
+  const [charAnchorLine, setCharAnchorLine] = useState<number>(0);
+  const [charAnchorCol, setCharAnchorCol] = useState<number>(0);
+  const [charCursorLine, setCharCursorLine] = useState<number>(0);
+  const [charCursorCol, setCharCursorCol] = useState<number>(0);
   const [noteLinesCount, setNoteLinesCount] = useState(0);
   const [noteCursor, setNoteCursor] = useState(0);
+  const [noteCursorCol, setNoteCursorCol] = useState(0);
+  const [cursorVisible, setCursorVisible] = useState(false);
   const [paneFocus, setPaneFocus] = useState<PaneFocus>('list');
   
   const { noteScroll } = useNoteSelection(
@@ -79,21 +98,67 @@ export default function App({ dir, editor }: AppProps): React.ReactElement {
 
   useEffect(() => {
     setNoteCursor(0);
+    setNoteCursorCol(0);
+    setCursorVisible(false);
     setSelectionActive(false);
     setSelectionAnchor(null);
     setSelectionCursor(null);
+    setSelectionMode('line');
+    setCharAnchorLine(0);
+    setCharAnchorCol(0);
+    setCharCursorLine(0);
+    setCharCursorCol(0);
   }, [idx]);
 
   const yankSelectionToClipboard = async (note: Note) => {
-    const allLines = (note.content || '').split(/\r?\n/);
-    const start = Math.min(selectionAnchor || 0, selectionCursor || 0);
-    const end = Math.max(selectionAnchor || 0, selectionCursor || 0);
-    const textToCopy = allLines.slice(start, end + 1).join('\n');
+    if (selectionMode === 'char') {
+      // Character-based yank
+      const lines = (note.content || '').split(/\r?\n/);
+      const startLine = Math.min(charAnchorLine, charCursorLine);
+      const endLine = Math.max(charAnchorLine, charCursorLine);
+      const startCol = charAnchorLine < charCursorLine || (charAnchorLine === charCursorLine && charAnchorCol < charCursorCol) 
+        ? charAnchorCol 
+        : charCursorCol;
+      const endCol = charAnchorLine < charCursorLine || (charAnchorLine === charCursorLine && charAnchorCol < charCursorCol) 
+        ? charCursorCol 
+        : charAnchorCol;
+
+      let textToCopy = '';
+      
+      if (startLine === endLine) {
+        // Single line selection
+        textToCopy = lines[startLine].slice(startCol, endCol);
+      } else {
+        // Multi-line selection
+        for (let i = startLine; i <= endLine; i++) {
+          if (i === startLine) {
+            textToCopy += lines[i].slice(startCol) + '\n';
+          } else if (i === endLine) {
+            textToCopy += lines[i].slice(0, endCol);
+          } else {
+            textToCopy += lines[i] + '\n';
+          }
+        }
+      }
+      
+      copyToClipboardOsc52(textToCopy);
+    } else {
+      // Line-based yank (existing)
+      const allLines = (note.content || '').split(/\r?\n/);
+      const start = Math.min(selectionAnchor || 0, selectionCursor || 0);
+      const end = Math.max(selectionAnchor || 0, selectionCursor || 0);
+      const textToCopy = allLines.slice(start, end + 1).join('\n');
+      
+      copyToClipboardOsc52(textToCopy);
+    }
     
-    copyToClipboardOsc52(textToCopy);
     setSelectionActive(false);
     setSelectionAnchor(null);
     setSelectionCursor(null);
+    setCharAnchorLine(0);
+    setCharAnchorCol(0);
+    setCharCursorLine(0);
+    setCharCursorCol(0);
   };
 
   const yankFullNoteToClipboard = async (note: Note) => {
@@ -104,19 +169,27 @@ export default function App({ dir, editor }: AppProps): React.ReactElement {
     const note = notes[idx];
     if (!note) return;
     
-    await editNoteInEditor(note, config, editor);
-    await reloadNotes();
+    try {
+      await editNoteInEditor(note, config, effectiveEditor);
+      await reloadNotes();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const handleCreateNote = async () => {
-    const content = await createNoteInEditor(config, editor);
-    const firstLine = content.split(/\r?\n/)[0] || '';
-    const title = firstLine.trim() || '';
-    const created = await createNote(effectiveDir, title || undefined, content);
-    
-    await reloadNotes();
-    const newIdx = notes.findIndex((x) => x.id === created.id);
-    setIdx(newIdx !== -1 ? newIdx : clampIndex(idx, notes.length));
+    try {
+      const content = await createNoteInEditor(config, effectiveEditor);
+      const firstLine = content.split(/\r?\n/)[0] || '';
+      const title = firstLine.trim() || '';
+      const created = await createNote(effectiveDir, title || undefined, content);
+      
+      await reloadNotes();
+      const newIdx = notes.findIndex((x) => x.id === created.id);
+      setIdx(newIdx !== -1 ? newIdx : clampIndex(idx, notes.length));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const handleDeleteNote = async () => {
@@ -145,6 +218,11 @@ export default function App({ dir, editor }: AppProps): React.ReactElement {
   };
 
   useInput(async (input: string, key: InkKey) => {
+    if (errorMessage) {
+      setErrorMessage(null);
+      return;
+    }
+
     if (showControls) {
       setShowControls(false);
       return;
@@ -175,13 +253,22 @@ export default function App({ dir, editor }: AppProps): React.ReactElement {
     if (handleSelectionInput(
       input,
       key,
-      { active: selectionActive, anchor: selectionAnchor, cursor: selectionCursor },
+      { active: selectionActive, anchor: selectionAnchor, cursor: selectionCursor, mode: selectionMode },
       currentNote,
       {
-        startSelection: () => {
+        startLineSelection: () => {
+          setSelectionMode('line');
           setSelectionActive(true);
           setSelectionAnchor(noteCursor);
           setSelectionCursor(noteCursor);
+        },
+        startCharSelection: () => {
+          setSelectionMode('char');
+          setSelectionActive(true);
+          setCharAnchorLine(noteCursor);
+          setCharAnchorCol(noteCursorCol);
+          setCharCursorLine(noteCursor);
+          setCharCursorCol(noteCursorCol);
         },
         moveSelectionUp: () => {
           setSelectionCursor(c => Math.max(0, (c ?? 0) - 1));
@@ -189,12 +276,84 @@ export default function App({ dir, editor }: AppProps): React.ReactElement {
         moveSelectionDown: () => {
           setSelectionCursor(c => Math.min(noteLinesCount - 1, (c ?? 0) + 1));
         },
+        moveCharLeft: () => {
+          if (!currentNote) return;
+          const newPos = moveCharLeftUtil(
+            { line: charCursorLine, col: charCursorCol },
+            currentNote.content || ''
+          );
+          setCharCursorLine(newPos.line);
+          setCharCursorCol(newPos.col);
+        },
+        moveCharRight: () => {
+          if (!currentNote) return;
+          const newPos = moveCharRightUtil(
+            { line: charCursorLine, col: charCursorCol },
+            currentNote.content || ''
+          );
+          setCharCursorLine(newPos.line);
+          setCharCursorCol(newPos.col);
+        },
+        moveCharUp: () => {
+          if (!currentNote) return;
+          const newPos = moveCharUpUtil(
+            { line: charCursorLine, col: charCursorCol },
+            currentNote.content || ''
+          );
+          setCharCursorLine(newPos.line);
+          setCharCursorCol(newPos.col);
+        },
+        moveCharDown: () => {
+          if (!currentNote) return;
+          const newPos = moveCharDownUtil(
+            { line: charCursorLine, col: charCursorCol },
+            currentNote.content || ''
+          );
+          setCharCursorLine(newPos.line);
+          setCharCursorCol(newPos.col);
+        },
+        moveWordForward: () => {
+          if (!currentNote) return;
+          const newPos = moveWordForwardUtil(
+            { line: charCursorLine, col: charCursorCol },
+            currentNote.content || ''
+          );
+          setCharCursorLine(newPos.line);
+          setCharCursorCol(newPos.col);
+        },
+        moveWordBackward: () => {
+          if (!currentNote) return;
+          const newPos = moveWordBackwardUtil(
+            { line: charCursorLine, col: charCursorCol },
+            currentNote.content || ''
+          );
+          setCharCursorLine(newPos.line);
+          setCharCursorCol(newPos.col);
+        },
+        moveToLineStart: () => {
+          const newPos = moveToLineStartUtil({ line: charCursorLine, col: charCursorCol });
+          setCharCursorLine(newPos.line);
+          setCharCursorCol(newPos.col);
+        },
+        moveToLineEnd: () => {
+          if (!currentNote) return;
+          const newPos = moveToLineEndUtil(
+            { line: charCursorLine, col: charCursorCol },
+            currentNote.content || ''
+          );
+          setCharCursorLine(newPos.line);
+          setCharCursorCol(newPos.col);
+        },
         yankSelection: yankSelectionToClipboard,
         yankFullNote: yankFullNoteToClipboard,
         cancelSelection: () => {
           setSelectionActive(false);
           setSelectionAnchor(null);
           setSelectionCursor(null);
+          setCharAnchorLine(0);
+          setCharAnchorCol(0);
+          setCharCursorLine(0);
+          setCharCursorCol(0);
         }
       }
     )) {
@@ -222,8 +381,62 @@ export default function App({ dir, editor }: AppProps): React.ReactElement {
     if (handleNavigationInput(input, key, paneFocus, selectionActive, {
       moveListUp: () => setIdx(i => Math.max(0, (i === -1 ? 0 : i) - 1)),
       moveListDown: () => setIdx(i => Math.min(notes.length - 1, Math.max(0, (i === -1 ? 0 : i) + 1))),
-      moveNoteUp: () => setNoteCursor(c => Math.max(0, c - 1)),
-      moveNoteDown: () => setNoteCursor(c => Math.min(Math.max(0, noteLinesCount - 1), c + 1)),
+      moveNoteUp: () => {
+        setCursorVisible(true);
+        setNoteCursor(c => {
+          const newLine = Math.max(0, c - 1);
+          if (currentNote) {
+            const line = (currentNote.content || '').split(/\r?\n/)[newLine] || '';
+            setNoteCursorCol(col => Math.min(col, Math.max(0, line.length - 1)));
+          }
+          return newLine;
+        });
+      },
+      moveNoteDown: () => {
+        setCursorVisible(true);
+        setNoteCursor(c => {
+          const newLine = Math.min(Math.max(0, noteLinesCount - 1), c + 1);
+          if (currentNote) {
+            const line = (currentNote.content || '').split(/\r?\n/)[newLine] || '';
+            setNoteCursorCol(col => Math.min(col, Math.max(0, line.length - 1)));
+          }
+          return newLine;
+        });
+      },
+      moveNoteLeft: () => {
+        setCursorVisible(true);
+        if (currentNote) {
+          const lines = (currentNote.content || '').split(/\r?\n/);
+          setNoteCursorCol(col => {
+            if (col > 0) {
+              return col - 1;
+            } else if (noteCursor > 0) {
+              // Move to end of previous line
+              setNoteCursor(c => c - 1);
+              const prevLine = lines[noteCursor - 1] || '';
+              return Math.max(0, prevLine.length - 1);
+            }
+            return col;
+          });
+        }
+      },
+      moveNoteRight: () => {
+        setCursorVisible(true);
+        if (currentNote) {
+          const lines = (currentNote.content || '').split(/\r?\n/);
+          const currentLine = lines[noteCursor] || '';
+          setNoteCursorCol(col => {
+            if (col < currentLine.length - 1) {
+              return col + 1;
+            } else if (noteCursor < lines.length - 1) {
+              // Move to start of next line
+              setNoteCursor(c => c + 1);
+              return 0;
+            }
+            return col;
+          });
+        }
+      },
       movePaneFocusToList: () => setPaneFocus('list'),
       movePaneFocusToNote: () => setPaneFocus('note'),
     })) {
@@ -260,21 +473,14 @@ export default function App({ dir, editor }: AppProps): React.ReactElement {
     setConfigEditing(false);
   };
 
+  const hasPopup = showControls || showDeleteConfirm || configEditing || errorMessage !== null;
+
   return (
     <Box flexDirection="column" width={columns} height={rows}>
-      {showDeleteConfirm && pendingDeleteIdx !== null && (
-        <ConfirmDialog
-          message={`Delete note "${notes[pendingDeleteIdx]?.title || notes[pendingDeleteIdx]?.id}"?`}
-          onCancel={() => {
-            setShowDeleteConfirm(false);
-            setPendingDeleteIdx(null);
-          }}
-          onConfirm={handleDeleteNote}
-        />
-      )}
-      {!showControls && !showDeleteConfirm && (
-        dirExists ? (
-          <Box flexDirection="row" flexGrow={1}>
+      {!hasPopup && (
+        <>
+          {dirExists ? (
+            <Box flexDirection="row" flexGrow={1}>
             <Box 
               width={leftWidth} 
               borderStyle="round" 
@@ -286,7 +492,7 @@ export default function App({ dir, editor }: AppProps): React.ReactElement {
                 notes={notes} 
                 selectedIndex={idx} 
                 width={leftWidth} 
-                height={rows - 6} 
+                height={rows - 7} 
               />
             </Box>
             <Box 
@@ -299,12 +505,19 @@ export default function App({ dir, editor }: AppProps): React.ReactElement {
               <NoteView
                 note={notes[idx]}
                 width={rightWidth}
-                height={rows}
+                height={rows - 1}
                 selectionActive={selectionActive}
                 selectionAnchor={selectionAnchor}
                 selectionCursor={selectionCursor}
+                selectionMode={selectionMode}
+                charAnchorLine={charAnchorLine}
+                charAnchorCol={charAnchorCol}
+                charCursorLine={charCursorLine}
+                charCursorCol={charCursorCol}
                 onLinesChanged={setNoteLinesCount}
                 noteCursor={noteCursor}
+                noteCursorCol={noteCursorCol}
+                cursorVisible={cursorVisible}
                 noteScroll={noteScroll}
               />
             </Box>
@@ -321,9 +534,61 @@ export default function App({ dir, editor }: AppProps): React.ReactElement {
               </Box>
             </Box>
           </Box>
-        )
+        )}
+          <Box paddingLeft={1}>
+            <Text>xpad-cli</Text>
+            <Text color="gray"> | </Text>
+            <Text color="cyan">{effectiveDir}</Text>
+            <Text color="gray"> | </Text>
+            <Text>{notes.length} notes</Text>
+            {showHidden && (
+              <>
+                <Text color="gray"> | </Text>
+                <Text color="yellow">showing hidden</Text>
+              </>
+            )}
+          </Box>
+        </>
+      )}
+      {showDeleteConfirm && pendingDeleteIdx !== null && (
+        <ConfirmDialog
+          message={`Delete note "${notes[pendingDeleteIdx]?.title || notes[pendingDeleteIdx]?.id}"?`}
+          onCancel={() => {
+            setShowDeleteConfirm(false);
+            setPendingDeleteIdx(null);
+          }}
+          onConfirm={handleDeleteNote}
+        />
       )}
       {showControls && <ControlsPopup onClose={() => setShowControls(false)} />}
+      {errorMessage && (
+        <Box 
+          position="absolute" 
+          left={0} 
+          top={0} 
+          width="100%" 
+          height="100%" 
+          flexDirection="column" 
+          justifyContent="center" 
+          alignItems="center"
+        >
+          <Box 
+            borderStyle="round"
+            borderColor="red"
+            padding={1}
+            flexDirection="column"
+            minWidth={60}
+          >
+            <Text color="red" bold>Error</Text>
+            <Box marginTop={1}>
+              <Text>{errorMessage}</Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text color="gray" dimColor>Press any key to dismiss</Text>
+            </Box>
+          </Box>
+        </Box>
+      )}
       {configEditing && (
         <ConfigEditor
           editorValue={configEditorInput}

@@ -1,14 +1,25 @@
 import tmp from 'tmp';
 import fs from 'fs/promises';
 import { spawnSync } from 'child_process';
+import which from 'which';
 import type { Note, AppConfig } from '../types/index.js';
 import { saveNote } from './noteService.js';
 
-export async function editNoteInEditor(note: Note, config: AppConfig, cliEditor?: string): Promise<void> {
+function validateEditor(editorCmd: string): void {
+  const baseCommand = editorCmd.split(/\s+/)[0];
+  try {
+    which.sync(baseCommand);
+  } catch {
+    throw new Error(`Editor '${baseCommand}' not found. Please check that it is installed and available in your PATH.`);
+  }
+}
+
+export async function editNoteInEditor(note: Note, config: AppConfig, editorCmd: string): Promise<void> {
+  validateEditor(editorCmd);
+  
   const tempFile = tmp.fileSync({ postfix: '.md' });
   await fs.writeFile(tempFile.name, note.content || '', 'utf8');
   
-  const editorCmd = cliEditor || config.editor || process.env.EDITOR || 'vi';
   spawnSync(editorCmd, [tempFile.name], { stdio: 'inherit' });
   
   const content = await fs.readFile(tempFile.name, 'utf8');
@@ -18,10 +29,11 @@ export async function editNoteInEditor(note: Note, config: AppConfig, cliEditor?
   tempFile.removeCallback();
 }
 
-export async function createNoteInEditor(config: AppConfig, cliEditor?: string): Promise<string> {
+export async function createNoteInEditor(config: AppConfig, editorCmd: string): Promise<string> {
+  validateEditor(editorCmd);
+  
   const tempFile = tmp.fileSync({ postfix: '.md' });
   
-  const editorCmd = cliEditor || config.editor || process.env.EDITOR || 'vi';
   spawnSync(editorCmd, [tempFile.name], { stdio: 'inherit' });
   
   const content = await fs.readFile(tempFile.name, 'utf8');

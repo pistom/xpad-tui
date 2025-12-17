@@ -28,8 +28,8 @@ export function useAppConfig(initialDir: string): UseAppConfigReturn {
       setConfig(cfg);
       setConfigEditorInput(cfg.editor || '');
       setConfigNotesDirInput(cfg.notesDir || '');
-      const { resolveNotesDir } = await import('../config.js');
-      setEffectiveDir(resolveNotesDir(cfg) || initialDir);
+      // Use the initialDir passed from CLI, which already has correct priority
+      setEffectiveDir(initialDir);
     };
     
     loadInitialConfig();

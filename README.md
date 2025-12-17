@@ -8,7 +8,28 @@ Quick start:
 
 1. Install dependencies: `npm install`
 2. Build: `npm run build`
-3. Run: `npx xpad-tui -d /path/to/notes` (defaults to `~/.config/xpad`)
+3. Run locally: `node dist/index.js -d /path/to/notes`
+   - Or use: `npm start` (uses default directory `~/.config/xpad`)
+   - Or install globally: `npm install -g .` then run `xpad-tui`
+
+## Command Line Options
+
+- `-d, --dir <dir>`: xpad notes directory (default: `~/.config/xpad`)
+- `-E, --editor <editor>`: editor command to use (default: `$EDITOR` or `vi`)
+
+**Parameter Priority**: CLI arguments > config file > environment variables > defaults
+
+Examples:
+```bash
+# Use custom directory
+xpad-tui -d ~/my-notes
+
+# Use specific editor
+xpad-tui --editor nano
+
+# Both options
+xpad-tui -d ~/my-notes --editor code
+```
 
 Controls in TUI:
 
@@ -28,8 +49,9 @@ Controls in TUI:
 
 Editor selection:
 
-- The editor used is read from `$EDITOR` by default, or you can pass `--editor <cmd>` to `xpad-tui` to override it for the session.
-- Press `c` in the TUI to open application configuration and set a default editor command; configuration is saved to `~/.config/xpad/xpad-cli.conf`.
+- **Priority order**: `--editor` CLI arg > config file > `$EDITOR` env var > `vi`
+- Press `c` in the TUI to open application configuration and set a default editor command
+- Configuration is saved to `~/.config/xpad/xpad-cli.conf`
 
 Notes:
 

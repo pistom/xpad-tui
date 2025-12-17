@@ -9,7 +9,8 @@ export function useNotesList(effectiveDir: string, showHidden: boolean) {
 
   const reloadNotes = async () => {
     try {
-      await fs.access(effectiveDir);
+      // Create directory if it doesn't exist
+      await fs.mkdir(effectiveDir, { recursive: true });
       setDirExists(true);
       const allNotes = await loadNotes(effectiveDir);
       const filtered = showHidden ? allNotes : allNotes.filter((note) => !note.hidden);

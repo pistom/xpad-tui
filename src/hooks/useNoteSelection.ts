@@ -4,9 +4,9 @@ export function useNoteSelection(noteLinesCount: number, rows: number, selection
   const [noteScroll, setNoteScroll] = useState(0);
 
   useEffect(() => {
-    const titleLines = 1;
     const padding = 2;
-    const availableLines = Math.max(0, rows - titleLines - padding - 1);
+    const border = 2;
+    const availableLines = Math.max(0, rows - padding - border);
     const targetCursor = (selectionActive && typeof selectionCursor === 'number') ? selectionCursor : noteCursor;
     
     setNoteScroll((currentScroll) => {
