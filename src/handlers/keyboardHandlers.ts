@@ -110,7 +110,7 @@ export function moveWordBackward(pos: CharPosition, noteContent: string): CharPo
     return pos;
   }
   
-  let currentLine = lines[line];
+  const currentLine = lines[line];
   
   // Skip whitespace
   while (col > 0 && /\s/.test(currentLine[col])) {
@@ -364,6 +364,46 @@ export function shouldShowControls(input: string, key: InkKey): boolean {
 
 export function shouldStartConfigEdit(input: string): boolean {
   return input === 'c';
+}
+
+export function shouldStartFilter(input: string): boolean {
+  return input === '/';
+}
+
+type FilterHandlers = {
+  handleBackspace: () => void;
+  handleCharInput: (char: string) => void;
+  cancelFilter: () => void;
+  confirmFilter: () => void;
+};
+
+export function handleFilterInput(
+  input: string,
+  key: InkKey,
+  handlers: FilterHandlers
+): boolean {
+  if (key.escape) {
+    handlers.cancelFilter();
+    return true;
+  }
+
+  if (key.return) {
+    handlers.confirmFilter();
+    return true;
+  }
+
+  if (key.backspace || key.delete) {
+    handlers.handleBackspace();
+    return true;
+  }
+
+  // Accept printable characters
+  if (input && input.length === 1 && !key.ctrl && !key.meta) {
+    handlers.handleCharInput(input);
+    return true;
+  }
+
+  return false;
 }
 
 export function shouldQuit(input: string): boolean {

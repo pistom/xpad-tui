@@ -17,8 +17,10 @@ import {
   handleNavigationInput,
   handleSelectionInput,
   handleNoteActionInput,
+  handleFilterInput,
   shouldShowControls,
   shouldStartConfigEdit,
+  shouldStartFilter,
   shouldQuit,
   moveCharLeft as moveCharLeftUtil,
   moveCharRight as moveCharRightUtil,
@@ -57,7 +59,23 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
   const effectiveEditor = cliEditor || config.editor || process.env.EDITOR || 'vi';
   
   const [showHidden, setShowHidden] = useState(false);
-  const { notes, dirExists, reloadNotes } = useNotesList(effectiveDir, showHidden);
+  const [filterActive, setFilterActive] = useState(false);
+  const [filterInput, setFilterInput] = useState('');
+  
+  const { notes: allNotes, dirExists, reloadNotes } = useNotesList(effectiveDir, showHidden);
+  
+  // Filter notes based on filter input
+  const notes = React.useMemo(() => {
+    if (!filterInput.trim()) {
+      return allNotes;
+    }
+    const searchTerm = filterInput.toLowerCase();
+    return allNotes.filter(note => 
+      (note.title || '').toLowerCase().includes(searchTerm) ||
+      (note.content || '').toLowerCase().includes(searchTerm)
+    );
+  }, [allNotes, filterInput]);
+  
   const [idx, setIdx] = useState(0);
   
   const [showControls, setShowControls] = useState(false);
@@ -95,6 +113,13 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     }
     setIdx(prev => clampIndex(prev, notes.length));
   }, [notes.length]);
+
+  // Reset index to 0 when filter becomes active or changes
+  useEffect(() => {
+    if (filterInput.trim()) {
+      setIdx(0);
+    }
+  }, [filterInput]);
 
   useEffect(() => {
     setNoteCursor(0);
@@ -225,6 +250,28 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
 
     if (showControls) {
       setShowControls(false);
+      return;
+    }
+
+    if (filterActive) {
+      if (handleFilterInput(input, key, {
+        handleBackspace: () => {
+          setFilterInput(prev => prev.slice(0, -1));
+        },
+        handleCharInput: (char: string) => {
+          setFilterInput(prev => prev + char);
+        },
+        cancelFilter: () => {
+          setFilterActive(false);
+          setFilterInput('');
+        },
+        confirmFilter: () => {
+          setFilterActive(false);
+          // Keep the filterInput to maintain the filter
+        }
+      })) {
+        return;
+      }
       return;
     }
 
@@ -370,6 +417,20 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
       setConfigNotesDirInput(config.notesDir || '');
       setConfigFocusedField('editor');
       setConfigEditing(true);
+      return;
+    }
+
+    if (shouldStartFilter(input)) {
+      setFilterActive(true);
+      if (!filterInput.trim()) {
+        setFilterInput('');
+      }
+      return;
+    }
+
+    // Clear filter with Escape when filter is active (but not in filter input mode)
+    if (key.escape && filterInput.trim()) {
+      setFilterInput('');
       return;
     }
 
@@ -536,15 +597,31 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
           </Box>
         )}
           <Box paddingLeft={1}>
-            <Text>xpad-cli</Text>
-            <Text color="gray"> | </Text>
-            <Text color="cyan">{effectiveDir}</Text>
-            <Text color="gray"> | </Text>
-            <Text>{notes.length} notes</Text>
-            {showHidden && (
+            {filterActive ? (
               <>
+                <Text color="cyan">/</Text>
+                <Text>{filterInput}</Text>
+                <Text color="gray"> (ESC to cancel, Enter to apply)</Text>
+              </>
+            ) : (
+              <>
+                <Text>xpad-cli</Text>
                 <Text color="gray"> | </Text>
-                <Text color="yellow">showing hidden</Text>
+                <Text color="cyan">{effectiveDir}</Text>
+                <Text color="gray"> | </Text>
+                <Text>{notes.length} notes</Text>
+                {filterInput.trim() && (
+                  <>
+                    <Text color="gray"> | </Text>
+                    <Text color="green">filtered: "{filterInput}"</Text>
+                  </>
+                )}
+                {showHidden && (
+                  <>
+                    <Text color="gray"> | </Text>
+                    <Text color="yellow">showing hidden</Text>
+                  </>
+                )}
               </>
             )}
           </Box>

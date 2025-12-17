@@ -10,6 +10,8 @@ const CONTROLS = [
   'H / L : Switch focus between Notes list (H) and Note view (L)',
   'j / k : Navigate up/down',
   'h / l : Navigate left/right (in note view)',
+  '/ : Filter notes by title or content',
+  'Esc : Clear active filter',
   'e : Edit note',
   'n : New note',
   'd : Delete note',
