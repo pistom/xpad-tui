@@ -1,102 +1,155 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
-import { TextInput } from '@inkjs/ui';
-import { loadNotes, saveNote, createNote, removeNote, setNoteHidden, type Note } from './xpad.js';
 import NotesList from './ui/NotesList.js';
 import NoteView from './ui/NoteView.js';
 import ControlsPopup from './ui/ControlsPopup.js';
 import ConfirmDialog from './ui/ConfirmDialog.js';
-// Config modal removed; using inline bottom config input instead
-import tmp from 'tmp';
-import fs from 'fs/promises';
-import { spawnSync } from 'child_process';
-import { loadConfig, saveConfig, type AppConfig, CONFIG_PATH, resolveNotesDir } from './config.js';
-import { log } from './logger.js';
+import ConfigEditor from './ui/ConfigEditor.js';
+import { useTerminalSize } from './hooks/useTerminalSize.js';
+import { useAppConfig } from './hooks/useAppConfig.js';
+import { useNotesList } from './hooks/useNotesList.js';
+import { useNoteSelection } from './hooks/useNoteSelection.js';
+import { setNoteHidden, removeNote, createNote } from './services/noteService.js';
+import { editNoteInEditor, createNoteInEditor } from './services/editorService.js';
+import { resolveNotesDir } from './config.js';
+import { copyToClipboardOsc52, calculateLayoutDimensions, clampIndex } from './utils/uiUtils.js';
+import {
+  handleNavigationInput,
+  handleSelectionInput,
+  handleNoteActionInput,
+  shouldShowControls,
+  shouldStartConfigEdit,
+  shouldQuit,
+} from './handlers/keyboardHandlers.js';
+import type { Note, InkKey, PaneFocus, ConfigFieldFocus } from './types/index.js';
 
-type Props = { dir: string; editor?: string };
+type AppProps = { 
+  dir: string; 
+  editor?: string;
+};
 
-export default function App({ dir, editor }: Props): React.ReactElement {
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [showHidden, setShowHidden] = useState(false);
-  const [idx, setIdx] = useState(0);
+export default function App({ dir, editor }: AppProps): React.ReactElement {
   const { exit } = useApp();
-  // minimal typing for ink's key object passed to useInput callbacks
-  type InkKey = {
-    ctrl?: boolean;
-    meta?: boolean;
-    shift?: boolean;
-    tab?: boolean;
-    return?: boolean;
-    escape?: boolean;
-    backspace?: boolean;
-    delete?: boolean;
-    home?: boolean;
-    end?: boolean;
-    f1?: boolean;
-    up?: boolean;
-    down?: boolean;
-    left?: boolean;
-    right?: boolean;
-  };
-  // focus model removed: no per-pane focus needed anymore
-  const [config, setConfig] = useState<AppConfig>({});
-  const [effectiveDir, setEffectiveDir] = useState(dir);
-  const [configEditing, setConfigEditing] = useState(false);
-  const [configEditorInput, setConfigEditorInput] = useState('');
-  const [configNotesDirInput, setConfigNotesDirInput] = useState('');
-  const [configFocusedField, setConfigFocusedField] = useState<'editor' | 'notesDir'>('editor');
+  const [columns, rows] = useTerminalSize();
+  
+  const {
+    config,
+    effectiveDir,
+    setEffectiveDir,
+    configEditing,
+    setConfigEditing,
+    configEditorInput,
+    setConfigEditorInput,
+    configNotesDirInput,
+    setConfigNotesDirInput,
+    updateConfig
+  } = useAppConfig(dir);
+  
+  const [showHidden, setShowHidden] = useState(false);
+  const { notes, dirExists, reloadNotes } = useNotesList(effectiveDir, showHidden);
+  const [idx, setIdx] = useState(0);
+  
   const [showControls, setShowControls] = useState(false);
-  const [dirExists, setDirExists] = useState(true);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pendingDeleteIdx, setPendingDeleteIdx] = useState<number | null>(null);
+  const [configFocusedField, setConfigFocusedField] = useState<ConfigFieldFocus>('editor');
+  
+  const [selectionActive, setSelectionActive] = useState(false);
+  const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
+  const [selectionCursor, setSelectionCursor] = useState<number | null>(null);
+  const [noteLinesCount, setNoteLinesCount] = useState(0);
+  const [noteCursor, setNoteCursor] = useState(0);
+  const [paneFocus, setPaneFocus] = useState<PaneFocus>('list');
+  
+  const { noteScroll } = useNoteSelection(
+    noteLinesCount, 
+    rows, 
+    selectionActive, 
+    selectionCursor, 
+    noteCursor
+  );
 
   useEffect(() => {
-    (async () => {
-      const cfg = await loadConfig();
-      setConfig(cfg);
-      setConfigEditorInput(cfg.editor || '');
-      setConfigNotesDirInput(cfg.notesDir || '');
-      setEffectiveDir(resolveNotesDir(cfg) || dir);
-    })();
-  }, []);
-
-  function useTerminalSize(): [number, number] {
-    const [size, setSize] = useState({ cols: process.stdout.columns || 80, rows: process.stdout.rows || 24 });
-    useEffect(() => {
-      const onResize = () => setSize({ cols: process.stdout.columns || 80, rows: process.stdout.rows || 24 });
-      process.stdout.on('resize', onResize);
-      return () => { process.stdout.off('resize', onResize); };
-    }, []);
-    return [size.cols, size.rows];
-  }
-
-  const [columns, rows] = useTerminalSize();
+    if (notes.length === 0) {
+      setIdx(-1);
+      return;
+    }
+    setIdx(prev => clampIndex(prev, notes.length));
+  }, [notes.length]);
 
   useEffect(() => {
-    (async () => {
-      try {
-        await fs.access(effectiveDir);
-        setDirExists(true);
-        const allNotes: Note[] = await loadNotes(effectiveDir);
-        const filteredNotes: Note[] = showHidden ? allNotes : allNotes.filter((note) => !note.hidden);
-        setNotes(filteredNotes);
-        setIdx(filteredNotes.length ? 0 : -1);
-      } catch (e) {
-        setDirExists(false);
-        setNotes([]);
-        setIdx(-1);
-      }
-    })();
-  }, [effectiveDir, showHidden]);
+    setNoteCursor(0);
+    setSelectionActive(false);
+    setSelectionAnchor(null);
+    setSelectionCursor(null);
+  }, [idx]);
+
+  const yankSelectionToClipboard = async (note: Note) => {
+    const allLines = (note.content || '').split(/\r?\n/);
+    const start = Math.min(selectionAnchor || 0, selectionCursor || 0);
+    const end = Math.max(selectionAnchor || 0, selectionCursor || 0);
+    const textToCopy = allLines.slice(start, end + 1).join('\n');
+    
+    copyToClipboardOsc52(textToCopy);
+    setSelectionActive(false);
+    setSelectionAnchor(null);
+    setSelectionCursor(null);
+  };
+
+  const yankFullNoteToClipboard = async (note: Note) => {
+    copyToClipboardOsc52(note.content || '');
+  };
+
+  const handleEditNote = async () => {
+    const note = notes[idx];
+    if (!note) return;
+    
+    await editNoteInEditor(note, config, editor);
+    await reloadNotes();
+  };
+
+  const handleCreateNote = async () => {
+    const content = await createNoteInEditor(config, editor);
+    const firstLine = content.split(/\r?\n/)[0] || '';
+    const title = firstLine.trim() || '';
+    const created = await createNote(effectiveDir, title || undefined, content);
+    
+    await reloadNotes();
+    const newIdx = notes.findIndex((x) => x.id === created.id);
+    setIdx(newIdx !== -1 ? newIdx : clampIndex(idx, notes.length));
+  };
+
+  const handleDeleteNote = async () => {
+    if (pendingDeleteIdx === null) return;
+    
+    const toDelete = notes[pendingDeleteIdx];
+    try {
+      await removeNote(toDelete);
+    } catch {
+      // ignore
+    }
+    
+    await reloadNotes();
+    setIdx(clampIndex(idx, notes.length));
+    setShowDeleteConfirm(false);
+    setPendingDeleteIdx(null);
+  };
+
+  const handleToggleHidden = async () => {
+    const note = notes[idx];
+    if (!note) return;
+    
+    await setNoteHidden(note, !note.hidden);
+    await reloadNotes();
+    setIdx(clampIndex(idx, notes.length));
+  };
 
   useInput(async (input: string, key: InkKey) => {
-    // If the controls popup is open, any key (or Esc / ?) closes it and input is consumed
     if (showControls) {
-      if (key.escape || input === '?' || input) setShowControls(false);
+      setShowControls(false);
       return;
     }
 
-    // If inline config editing is active, handle cancel (Esc) and Tab to switch focused field
     if (configEditing) {
       if (key.escape) {
         setConfigEditing(false);
@@ -104,12 +157,11 @@ export default function App({ dir, editor }: Props): React.ReactElement {
         setConfigNotesDirInput(config.notesDir || '');
       }
       if (key.tab) {
-        setConfigFocusedField((f) => (f === 'editor' ? 'notesDir' : 'editor'));
+        setConfigFocusedField(f => f === 'editor' ? 'notesDir' : 'editor');
       }
       return;
     }
 
-    // If delete confirmation is open, only handle cancel (Esc)
     if (showDeleteConfirm) {
       if (key.escape) {
         setShowDeleteConfirm(false);
@@ -118,24 +170,43 @@ export default function App({ dir, editor }: Props): React.ReactElement {
       return;
     }
 
-    // Show controls popup (also accept F1 or Ctrl-h)
-    if (input === '?' || (key && key.f1) || (key && key.ctrl && input === 'h')) {
+    const currentNote = notes[idx];
+
+    if (handleSelectionInput(
+      input,
+      key,
+      { active: selectionActive, anchor: selectionAnchor, cursor: selectionCursor },
+      currentNote,
+      {
+        startSelection: () => {
+          setSelectionActive(true);
+          setSelectionAnchor(noteCursor);
+          setSelectionCursor(noteCursor);
+        },
+        moveSelectionUp: () => {
+          setSelectionCursor(c => Math.max(0, (c ?? 0) - 1));
+        },
+        moveSelectionDown: () => {
+          setSelectionCursor(c => Math.min(noteLinesCount - 1, (c ?? 0) + 1));
+        },
+        yankSelection: yankSelectionToClipboard,
+        yankFullNote: yankFullNoteToClipboard,
+        cancelSelection: () => {
+          setSelectionActive(false);
+          setSelectionAnchor(null);
+          setSelectionCursor(null);
+        }
+      }
+    )) {
+      return;
+    }
+
+    if (shouldShowControls(input, key)) {
       setShowControls(true);
       return;
     }
 
-    if (input === 'h') {
-      setShowHidden((prev) => !prev);
-      return;
-    }
-    if (input === 'q') return exit();
-
-    // Navigation
-    if (input === 'j') setIdx((i) => Math.min(notes.length - 1, Math.max(0, (i === -1 ? 0 : i) + 1)));
-    if (input === 'k') setIdx((i) => Math.max(0, (i === -1 ? 0 : i) - 1));
-
-    // Start inline config editing
-    if (input === 'c') {
+    if (shouldStartConfigEdit(input)) {
       setConfigEditorInput(config.editor || '');
       setConfigNotesDirInput(config.notesDir || '');
       setConfigFocusedField('editor');
@@ -143,100 +214,99 @@ export default function App({ dir, editor }: Props): React.ReactElement {
       return;
     }
 
-    // Use external editor for edit
-    if (input === 'e' && idx >= 0 && notes[idx]) {
-      await editNote(notes[idx]);
-      const n = await loadNotes(effectiveDir);
-      const filtered = showHidden ? n : n.filter((note) => !note.hidden);
-      setNotes(filtered);
-      setIdx(Math.min(idx, filtered.length - 1));
+    if (shouldQuit(input)) {
+      exit();
       return;
     }
 
-    // Create new note in editor
-    if (input === 'n') {
-      const t = tmp.fileSync({ postfix: '.md' });
-      const editorCmd = editor || config.editor || process.env.EDITOR || 'vi';
-      spawnSync(editorCmd, [t.name], { stdio: 'inherit' });
-      const content = await fs.readFile(t.name, 'utf8');
-      const firstLine = content.split(/\r?\n/)[0] || '';
-      const title = firstLine.trim() || '';
-      const created = await createNote(effectiveDir, title || undefined as any, content);
-      t.removeCallback();
-      const n = await loadNotes(effectiveDir);
-      const filtered = showHidden ? n : n.filter((note) => !note.hidden);
-      setNotes(filtered);
-      const newIdx = filtered.findIndex((x) => x.id === created.id);
-      setIdx(newIdx === -1 ? Math.min(idx, Math.max(0, filtered.length - 1)) : newIdx);
+    if (handleNavigationInput(input, key, paneFocus, selectionActive, {
+      moveListUp: () => setIdx(i => Math.max(0, (i === -1 ? 0 : i) - 1)),
+      moveListDown: () => setIdx(i => Math.min(notes.length - 1, Math.max(0, (i === -1 ? 0 : i) + 1))),
+      moveNoteUp: () => setNoteCursor(c => Math.max(0, c - 1)),
+      moveNoteDown: () => setNoteCursor(c => Math.min(Math.max(0, noteLinesCount - 1), c + 1)),
+      movePaneFocusToList: () => setPaneFocus('list'),
+      movePaneFocusToNote: () => setPaneFocus('note'),
+    })) {
       return;
     }
 
-    if (input === 'd' && idx >= 0 && notes[idx]) {
-      setPendingDeleteIdx(idx);
-      setShowDeleteConfirm(true);
-      return;
-    }
-
-    // Toggle hidden flag for selected note
-    if (input === 'H' && idx >= 0 && notes[idx]) {
-      const note = notes[idx];
-      await setNoteHidden(note, !note.hidden);
-      const n = await loadNotes(effectiveDir);
-      const filtered = showHidden ? n : n.filter((note) => !note.hidden);
-      setNotes(filtered);
-      setIdx(Math.min(idx, filtered.length - 1));
+    if (handleNoteActionInput(input, currentNote, {
+      editNote: handleEditNote,
+      createNote: handleCreateNote,
+      deleteNote: () => {
+        setPendingDeleteIdx(idx);
+        setShowDeleteConfirm(true);
+      },
+      toggleHidden: handleToggleHidden,
+      toggleShowHidden: () => setShowHidden(prev => !prev),
+    })) {
       return;
     }
   });
 
-  async function editNote(note: Note) {
-    const t = tmp.fileSync({ postfix: '.md' });
-    await fs.writeFile(t.name, note.content || '', 'utf8');
-    const editorCmd = editor || config.editor || process.env.EDITOR || 'vi';
-    spawnSync(editorCmd, [t.name], { stdio: 'inherit' });
-    const content = await fs.readFile(t.name, 'utf8');
-    note.content = content;
-    await saveNote(note);
-    t.removeCallback();
-  }
+  const { leftWidth, rightWidth } = calculateLayoutDimensions(columns);
 
-  const leftWidth = Math.max(30, Math.floor(columns * 0.35));
-  const rightWidth = Math.max(20, columns - leftWidth - 3);
-  // modalWidth/modalHeight no longer needed (inline config editor used)
+  const handleEditorSubmit = async (value: string) => {
+    const newConfig = { ...config, editor: value.trim() || undefined };
+    await updateConfig(newConfig);
+    setConfigEditing(false);
+  };
+
+  const handleNotesDirSubmit = async (value: string) => {
+    const notesDir = value.trim() || undefined;
+    const newConfig = { ...config, notesDir };
+    await updateConfig(newConfig);
+    setEffectiveDir(resolveNotesDir(newConfig));
+    setConfigEditing(false);
+  };
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
       {showDeleteConfirm && pendingDeleteIdx !== null && (
         <ConfirmDialog
           message={`Delete note "${notes[pendingDeleteIdx]?.title || notes[pendingDeleteIdx]?.id}"?`}
-          onCancel={() => { setShowDeleteConfirm(false); setPendingDeleteIdx(null); }}
-          onConfirm={async () => {
-            const p = pendingDeleteIdx;
-            if (p === null) return;
-            const toDelete = notes[p];
-            try {
-              await removeNote(toDelete);
-            } catch (e) {
-              // ignore errors removing
-            }
-            const n = await loadNotes(effectiveDir);
-            const filtered = showHidden ? n : n.filter((note) => !note.hidden);
-            setNotes(filtered);
-            setIdx((i) => Math.min(Math.max(0, filtered.length ? Math.min(i, filtered.length - 1) : -1), Math.max(0, filtered.length - 1)));
+          onCancel={() => {
             setShowDeleteConfirm(false);
             setPendingDeleteIdx(null);
           }}
+          onConfirm={handleDeleteNote}
         />
       )}
       {!showControls && !showDeleteConfirm && (
         dirExists ? (
           <Box flexDirection="row" flexGrow={1}>
-            <Box width={leftWidth} borderStyle="round" flexDirection="column" borderColor={'gray'}>
+            <Box 
+              width={leftWidth} 
+              borderStyle="round" 
+              flexDirection="column" 
+              borderColor={paneFocus === 'list' ? 'cyan' : 'gray'}
+            >
               <Text bold>Notes</Text>
-              <NotesList notes={notes} selectedIndex={idx} width={leftWidth} height={rows - 6} />
+              <NotesList 
+                notes={notes} 
+                selectedIndex={idx} 
+                width={leftWidth} 
+                height={rows - 6} 
+              />
             </Box>
-            <Box marginLeft={1} width={rightWidth} flexDirection="column">
-              <NoteView note={notes[idx]} width={rightWidth} height={rows} />
+            <Box 
+              marginLeft={1} 
+              width={rightWidth} 
+              flexDirection="column" 
+              borderStyle="round" 
+              borderColor={paneFocus === 'note' ? 'cyan' : 'gray'}
+            >
+              <NoteView
+                note={notes[idx]}
+                width={rightWidth}
+                height={rows}
+                selectionActive={selectionActive}
+                selectionAnchor={selectionAnchor}
+                selectionCursor={selectionCursor}
+                onLinesChanged={setNoteLinesCount}
+                noteCursor={noteCursor}
+                noteScroll={noteScroll}
+              />
             </Box>
           </Box>
         ) : (
@@ -254,45 +324,17 @@ export default function App({ dir, editor }: Props): React.ReactElement {
         )
       )}
       {showControls && <ControlsPopup onClose={() => setShowControls(false)} />}
-      {/* Inline config editor at the bottom (non-modal, no popup) */}
-      {configEditing ? (
-            <Box borderStyle="round" borderColor="cyan" marginTop={0} width="100%" flexDirection="column">
-              <Text bold>Application configuration</Text>
-              <Box flexDirection="row" width="100%">
-                <Text color="gray">Editor command (overrides $EDITOR): </Text>
-                <TextInput
-                  isDisabled={configFocusedField !== 'editor'}
-                  defaultValue={configEditorInput}
-                  onChange={(val: string) => setConfigEditorInput(val)}
-                  onSubmit={async (val: string) => {
-                    const newCfg = { ...config, editor: val.trim() || undefined };
-                    await saveConfig(newCfg);
-                    setConfig(newCfg);
-                    setConfigEditing(false);
-                  }}
-                />
-              </Box>
-                <Box marginTop={1} flexDirection="row" width="100%">
-                  <Text color="gray">Notes directory (default ~/.config/xpad): </Text>
-                  <TextInput
-                    isDisabled={configFocusedField !== 'notesDir'}
-                    defaultValue={configNotesDirInput || ''}
-                    onChange={(val: string) => setConfigNotesDirInput(val)}
-                    onSubmit={async (val: string) => {
-                      const nd = val.trim() || undefined;
-                      const newCfg = { ...config, notesDir: nd };
-                      await saveConfig(newCfg);
-                      setConfig(newCfg);
-                      setEffectiveDir(resolveNotesDir(newCfg));
-                      setConfigEditing(false);
-                    }}
-                  />
-                </Box>
-              <Box marginTop={1} flexDirection="row" width="100%">
-                <Text color="gray">Enter to save, Esc to cancel</Text>
-              </Box>
-            </Box>
-      ) : null}
+      {configEditing && (
+        <ConfigEditor
+          editorValue={configEditorInput}
+          notesDirValue={configNotesDirInput}
+          focusedField={configFocusedField}
+          onEditorChange={setConfigEditorInput}
+          onNotesDirChange={setConfigNotesDirInput}
+          onEditorSubmit={handleEditorSubmit}
+          onNotesDirSubmit={handleNotesDirSubmit}
+        />
+      )}
     </Box>
   );
 }

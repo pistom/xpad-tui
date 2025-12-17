@@ -18,6 +18,13 @@ Controls in TUI:
 - `d`: delete selected note
 - `H`: toggle hidden notes
 - `q`: quit
+ - `v`: enter vi-like visual selection mode for the note view
+ - while in visual mode: `j`/`k` (or arrow keys) move the selection cursor
+ - `y`: yank (copy) the current selection to the terminal clipboard via OSC52
+ - `Y`: yank entire note
+ - `h` / `l`: switch focus between the Notes list (`h`) and the Note view (`l`)
+ - `.`: toggle the selected note's hidden flag
+ - `a`: toggle showing hidden notes
 
 Editor selection:
 

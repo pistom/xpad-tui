@@ -1,26 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import type { NoteInfo } from '../types/index.js';
 
-export interface NoteInfo {
-  width: number;
-  height: number;
-  x: number;
-  y: number;
-  followFont: boolean;
-  followColor: boolean;
-  sticky: boolean;
-  hidden: boolean;
-  backgroundColor: string;
-  textColor: string;
-  font: string;
-  contentFile: string;
-}
-
-/**
- * Parses an info file and extracts its metadata.
- * @param filePath - Path to the info file.
- * @returns Parsed NoteInfo object.
- */
 export function parseInfoFile(filePath: string): NoteInfo | null {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');

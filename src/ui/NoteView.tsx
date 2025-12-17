@@ -1,66 +1,123 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Box, Text } from 'ink';
-import type { Note } from '../xpad.js';
+import type { Note } from '../types/index.js';
 
-export default function NoteView({ note, width, height }: { note?: Note; width: number; height?: number }) {
-  if (!note) return <Box><Text color="gray">No note selected</Text></Box>;
+type NoteViewProps = {
+  note?: Note;
+  width: number;
+  height?: number;
+  selectionActive?: boolean;
+  selectionAnchor?: number | null;
+  selectionCursor?: number | null;
+  onLinesChanged?: (count: number) => void;
+  noteCursor?: number | null;
+  noteScroll?: number;
+};
 
-  // Convert content (with newlines) to an array of lines fitting the width.
-  // Preserve empty lines and do NOT wrap long lines — simply cut them to maxWidth.
-  const contentToLines = (content: string, maxWidth: number): string[] => {
-    const rawLines = content.split(/\r?\n/);
-    const out: string[] = [];
-    const w = Math.max(1, maxWidth);
-    for (const rl of rawLines) {
-      // Replace tabs with spaces and preserve all other characters (including empty lines)
-      const line = rl.replace(/\t/g, '    ');
-      if (line.length <= w) {
-        out.push(line);
-      } else {
-        out.push(line.slice(0, w));
-      }
-    }
-    return out;
-  };
+function splitContentToLines(content: string, maxWidth: number): string[] {
+  const rawLines = content.split(/\r?\n/);
+  const width = Math.max(1, maxWidth);
+  
+  return rawLines.map((rawLine) => {
+    const line = rawLine.replace(/\t/g, '    ');
+    return line.length <= width ? line : line.slice(0, width);
+  });
+}
 
-  // compute available inner height: subtract title and some padding/borders
+function calculateVisibleLines(lines: string[], height: number, noteScroll: number) {
   const titleLines = 1;
-  const padding = 2; // top & bottom inside border
-  const availableLines = Math.max(0, (height || 10) - titleLines - padding - 1);
-
-  const lines = contentToLines(note.content || '', Math.max(1, width - 4));
-
+  const padding = 2;
+  const availableLines = Math.max(0, height - titleLines - padding - 1);
   const showMore = lines.length > availableLines;
-  const visible = showMore ? lines.slice(0, availableLines) : lines;
+  const scroll = typeof noteScroll === 'number' ? noteScroll : 0;
+  
+  return showMore ? lines.slice(scroll, scroll + availableLines) : lines;
+}
 
-  // If we need to indicate more content, append '…' to the last visible line (making space)
-  if (showMore && visible.length > 0) {
-    const last = visible[visible.length - 1];
-    const ell = ' …';
-    const maxLineLen = Math.max(0, width - 4);
-    if (last.length + ell.length > maxLineLen) {
-      visible[visible.length - 1] = last.slice(0, Math.max(0, maxLineLen - ell.length)) + ell;
-    } else {
-      visible[visible.length - 1] = last + ell;
-    }
+function isLineSelected(
+  globalIdx: number, 
+  selectionActive: boolean, 
+  selectionAnchor: number | null, 
+  selectionCursor: number | null
+): boolean {
+  if (!selectionActive || selectionAnchor === null || selectionCursor === null) {
+    return false;
   }
+  
+  const start = Math.min(selectionAnchor, selectionCursor);
+  const end = Math.max(selectionAnchor, selectionCursor);
+  return globalIdx >= start && globalIdx <= end;
+}
+
+function getLineStyle(
+  isSelected: boolean,
+  isCaret: boolean,
+  isEmpty: boolean,
+  note: Note | undefined
+) {
+  if (isSelected) {
+    return { bg: 'cyan', color: 'black', bold: false };
+  }
+  
+  if (isCaret) {
+    return { bg: 'gray', color: 'black', bold: true };
+  }
+  
+  return { 
+    bg: undefined, 
+    color: isEmpty ? 'gray' : note?.textColor, 
+    bold: false 
+  };
+}
+
+export default function NoteView({
+  note,
+  width,
+  height = 10,
+  selectionActive = false,
+  selectionAnchor = null,
+  selectionCursor = null,
+  onLinesChanged,
+  noteCursor = null,
+  noteScroll = 0,
+}: NoteViewProps): React.ReactElement {
+  if (!note) {
+    return (
+      <Box>
+        <Text color="gray">No note selected</Text>
+      </Box>
+    );
+  }
+
+  const lines = splitContentToLines(note.content || '', Math.max(1, width - 4));
+
+  useEffect(() => {
+    if (onLinesChanged) {
+      onLinesChanged(lines.length);
+    }
+  }, [lines.length]);
+
+  const visibleLines = calculateVisibleLines(lines, height, noteScroll);
 
   return (
     <Box
       flexDirection="column"
-      borderStyle="round"
-      borderColor="gray"
       backgroundColor={note.backgroundColor}
       padding={1}
       width={width}
       height={height}
     >
       <Box flexDirection="column">
-        {visible.map((l, i) => {
-          const isEmpty = l.trim().length === 0;
+        {visibleLines.map((line, idx) => {
+          const globalIdx = idx + noteScroll;
+          const isEmpty = line.trim().length === 0;
+          const selected = isLineSelected(globalIdx, selectionActive, selectionAnchor, selectionCursor);
+          const caret = !selectionActive && typeof noteCursor === 'number' && globalIdx === noteCursor;
+          const { bg, color, bold } = getLineStyle(selected, caret, isEmpty, note);
+
           return (
-            <Text key={i} color={isEmpty ? 'gray' : note.textColor}>
-              {isEmpty ? ' ' : l}
+            <Text key={idx} color={color} backgroundColor={bg} bold={bold}>
+              {isEmpty ? ' ' : line}
             </Text>
           );
         })}

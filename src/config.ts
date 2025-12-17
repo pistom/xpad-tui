@@ -1,12 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-
-export type AppConfig = {
-  editor?: string;
-  notesDir?: string;
-  // future fields here
-};
+import type { AppConfig } from './types/index.js';
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'xpad');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'xpad-cli.conf');
