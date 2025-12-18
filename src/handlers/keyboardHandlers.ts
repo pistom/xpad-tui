@@ -409,3 +409,8 @@ export function handleFilterInput(
 export function shouldQuit(input: string): boolean {
   return input === 'q';
 }
+
+export function shouldToggleGridView(key: InkKey, filterActive: boolean, configEditing: boolean, showDeleteConfirm: boolean, selectionActive: boolean): boolean {
+  // Only toggle grid view with Tab if we're not in any other mode
+  return !!key.tab && !filterActive && !configEditing && !showDeleteConfirm && !selectionActive;
+}

@@ -15,7 +15,7 @@ Quick start:
 ## Command Line Options
 
 - `-d, --dir <dir>`: xpad notes directory (default: `~/.config/xpad`)
-- `-E, --editor <editor>`: editor command to use (default: `$EDITOR` or `vi`)
+- `-e, --editor <editor>`: editor command to use (default: `nano`)
 
 **Parameter Priority**: CLI arguments > config file > environment variables > defaults
 
@@ -33,19 +33,13 @@ xpad-tui -d ~/my-notes --editor code
 
 Controls in TUI:
 
-- `j`/`k`: move down/up
-- `e`: edit selected note (opens external editor)
-- `n`: create a new note (opens external editor)
-- `d`: delete selected note
-- `H`: toggle hidden notes
-- `q`: quit
- - `v`: enter vi-like visual selection mode for the note view
- - while in visual mode: `j`/`k` (or arrow keys) move the selection cursor
- - `y`: yank (copy) the current selection to the terminal clipboard via OSC52
- - `Y`: yank entire note
- - `h` / `l`: switch focus between the Notes list (`h`) and the Note view (`l`)
- - `.`: toggle the selected note's hidden flag
- - `a`: toggle showing hidden notes
+- Navigation: `j`/`k` move up/down, `h`/`l` move left/right in the note view, `H`/`L` focus Notes list / Note view
+- Grid view: `Tab` toggle grid, `h/j/k/l` move, `Enter` open selected note, `Tab`/`Esc` exit grid
+- Filtering: `/` start filter, `Esc` clear filter
+- Editing: `e` edit note, `n` new note, `d` delete note
+- Visual select: `v` char mode, `V` line mode, `h/j/k/l` move, `w`/`b` word jump (char mode), `0`/`$` line start/end (char mode), `y` yank selection, `Y` yank whole note, `Esc` exit visual
+- Hidden & config: `.` toggle note hidden, `a` show/hide hidden notes, `c` open config
+- Global: `?` show controls, `q` quit
 
 Editor selection:
 

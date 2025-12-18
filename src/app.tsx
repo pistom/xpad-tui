@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import NotesList from './ui/NotesList.js';
 import NoteView from './ui/NoteView.js';
+import NotesGridView, { GRID_CARD_GAP, GRID_CARD_WIDTH } from './ui/NotesGridView.js';
 import ControlsPopup from './ui/ControlsPopup.js';
 import ConfirmDialog from './ui/ConfirmDialog.js';
 import ConfigEditor from './ui/ConfigEditor.js';
@@ -22,6 +23,7 @@ import {
   shouldStartConfigEdit,
   shouldStartFilter,
   shouldQuit,
+  shouldToggleGridView,
   moveCharLeft as moveCharLeftUtil,
   moveCharRight as moveCharRightUtil,
   moveCharUp as moveCharUpUtil,
@@ -61,6 +63,8 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
   const [showHidden, setShowHidden] = useState(false);
   const [filterActive, setFilterActive] = useState(false);
   const [filterInput, setFilterInput] = useState('');
+  const [gridViewActive, setGridViewActive] = useState(false);
+  const [gridSelectedIndex, setGridSelectedIndex] = useState(0);
   
   const { notes: allNotes, dirExists, reloadNotes } = useNotesList(effectiveDir, showHidden);
   
@@ -434,6 +438,87 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
       return;
     }
 
+    // Toggle grid view with Tab key
+    if (shouldToggleGridView(key, filterActive, configEditing, showDeleteConfirm, selectionActive)) {
+      if (!gridViewActive) {
+        const initialIdx = clampIndex(idx, notes.length);
+        setGridSelectedIndex(initialIdx === -1 ? 0 : initialIdx);
+      }
+      setGridViewActive(prev => !prev);
+      return;
+    }
+
+    // Grid view navigation
+    if (gridViewActive) {
+      const visibleNotes = notes.filter(note => !note.hidden);
+      const totalVisible = visibleNotes.length;
+      if (totalVisible === 0) {
+        setGridViewActive(false);
+        return;
+      }
+
+      if (shouldQuit(input)) {
+        exit();
+        return;
+      }
+
+      const clampedGridIndex = clampIndex(gridSelectedIndex, totalVisible);
+      if (clampedGridIndex !== gridSelectedIndex) {
+        setGridSelectedIndex(clampedGridIndex === -1 ? 0 : clampedGridIndex);
+      }
+
+      const postItsPerRow = Math.max(
+        1,
+        Math.floor((columns + GRID_CARD_GAP) / (GRID_CARD_WIDTH + GRID_CARD_GAP))
+      );
+      const totalRows = Math.ceil(totalVisible / postItsPerRow);
+      const currentRow = Math.floor(clampedGridIndex / postItsPerRow);
+      const currentCol = clampedGridIndex % postItsPerRow;
+      const activeIndex = clampedGridIndex;
+
+      if (key.escape) {
+        // Exit grid view without changing selection
+        setGridViewActive(false);
+        return;
+      }
+
+      if (key.return) {
+        // Select note and exit grid view
+        if (clampedGridIndex >= 0 && clampedGridIndex < notes.length) {
+          setIdx(clampedGridIndex);
+          setPaneFocus('note');
+        }
+        setGridViewActive(false);
+        return;
+      }
+
+      // Vi-style navigation
+      if (input === 'h' && currentCol > 0) {
+        // Move left
+        setGridSelectedIndex(Math.max(0, activeIndex - 1));
+        return;
+      }
+
+      if (input === 'l' && currentCol < postItsPerRow - 1 && activeIndex < visibleNotes.length - 1) {
+        // Move right
+        setGridSelectedIndex(Math.min(visibleNotes.length - 1, activeIndex + 1));
+        return;
+      }
+
+      if (input === 'k' && currentRow > 0) {
+        // Move up
+        setGridSelectedIndex(Math.max(0, activeIndex - postItsPerRow));
+        return;
+      }
+
+      if (input === 'j' && currentRow < totalRows - 1) {
+        // Move down
+        setGridSelectedIndex(Math.min(visibleNotes.length - 1, activeIndex + postItsPerRow));
+        return;
+      }
+      return;
+    }
+
     if (shouldQuit(input)) {
       exit();
       return;
@@ -541,48 +626,57 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
       {!hasPopup && (
         <>
           {dirExists ? (
-            <Box flexDirection="row" flexGrow={1}>
-            <Box 
-              width={leftWidth} 
-              borderStyle="round" 
-              flexDirection="column" 
-              borderColor={paneFocus === 'list' ? 'cyan' : 'gray'}
-            >
-              <Text bold>Notes</Text>
-              <NotesList 
+            gridViewActive ? (
+              <NotesGridView 
                 notes={notes} 
-                selectedIndex={idx} 
+                width={columns} 
+                height={rows - 2}
+                selectedIndex={gridSelectedIndex}
+              />
+            ) : (
+              <Box flexDirection="row" flexGrow={1}>
+              <Box 
                 width={leftWidth} 
-                height={rows - 7} 
-              />
+                borderStyle="round" 
+                flexDirection="column" 
+                borderColor={paneFocus === 'list' ? 'cyan' : 'gray'}
+              >
+                <Text bold > Notes</Text>
+                <NotesList 
+                  notes={notes} 
+                  selectedIndex={idx} 
+                  width={leftWidth} 
+                  height={rows - 7} 
+                />
+              </Box>
+              <Box 
+                marginLeft={1} 
+                width={rightWidth} 
+                flexDirection="column" 
+                borderStyle="round" 
+                borderColor={paneFocus === 'note' ? 'cyan' : 'gray'}
+              >
+                <NoteView
+                  note={notes[idx]}
+                  width={rightWidth}
+                  height={rows - 1}
+                  selectionActive={selectionActive}
+                  selectionAnchor={selectionAnchor}
+                  selectionCursor={selectionCursor}
+                  selectionMode={selectionMode}
+                  charAnchorLine={charAnchorLine}
+                  charAnchorCol={charAnchorCol}
+                  charCursorLine={charCursorLine}
+                  charCursorCol={charCursorCol}
+                  onLinesChanged={setNoteLinesCount}
+                  noteCursor={noteCursor}
+                  noteCursorCol={noteCursorCol}
+                  cursorVisible={cursorVisible}
+                  noteScroll={noteScroll}
+                />
+              </Box>
             </Box>
-            <Box 
-              marginLeft={1} 
-              width={rightWidth} 
-              flexDirection="column" 
-              borderStyle="round" 
-              borderColor={paneFocus === 'note' ? 'cyan' : 'gray'}
-            >
-              <NoteView
-                note={notes[idx]}
-                width={rightWidth}
-                height={rows - 1}
-                selectionActive={selectionActive}
-                selectionAnchor={selectionAnchor}
-                selectionCursor={selectionCursor}
-                selectionMode={selectionMode}
-                charAnchorLine={charAnchorLine}
-                charAnchorCol={charAnchorCol}
-                charCursorLine={charCursorLine}
-                charCursorCol={charCursorCol}
-                onLinesChanged={setNoteLinesCount}
-                noteCursor={noteCursor}
-                noteCursorCol={noteCursorCol}
-                cursorVisible={cursorVisible}
-                noteScroll={noteScroll}
-              />
-            </Box>
-          </Box>
+            )
         ) : (
           <Box flexDirection="column" flexGrow={1} justifyContent="center" alignItems="center">
             <Box borderStyle="round" padding={1} minWidth={60} flexDirection="column">
