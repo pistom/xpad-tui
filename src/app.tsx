@@ -10,10 +10,16 @@ import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { useAppConfig } from './hooks/useAppConfig.js';
 import { useNotesList } from './hooks/useNotesList.js';
 import { useNoteSelection } from './hooks/useNoteSelection.js';
-import { setNoteHidden, removeNote, createNote } from './services/noteService.js';
+import { setNoteHidden, removeNote, createNote, saveNote } from './services/noteService.js';
 import { editNoteInEditor, createNoteInEditor } from './services/editorService.js';
 import { resolveNotesDir } from './config.js';
 import { copyToClipboardOsc52, calculateLayoutDimensions, clampIndex } from './utils/uiUtils.js';
+import { 
+  isTaskLine, 
+  toggleTaskCheck, 
+  toggleTaskCancel, 
+  updateNoteLineContent 
+} from './utils/noteUtils.js';
 import {
   handleNavigationInput,
   handleSelectionInput,
@@ -409,6 +415,34 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
       }
     )) {
       return;
+    }
+
+    // Handle task toggling when cursor is on a task line in note view
+    if (paneFocus === 'note' && !selectionActive && currentNote) {
+      const lines = (currentNote.content || '').split(/\r?\n/);
+      const currentLine = lines[noteCursor];
+      
+      if (currentLine && isTaskLine(currentLine)) {
+        // Toggle check/uncheck with Space
+        if (input === ' ') {
+          const newLine = toggleTaskCheck(currentLine);
+          const newContent = updateNoteLineContent(currentNote.content || '', noteCursor, newLine);
+          currentNote.content = newContent;
+          await saveNote(currentNote);
+          await reloadNotes();
+          return;
+        }
+        
+        // Toggle cancel (x) with 'x'
+        if (input === 'x') {
+          const newLine = toggleTaskCancel(currentLine);
+          const newContent = updateNoteLineContent(currentNote.content || '', noteCursor, newLine);
+          currentNote.content = newContent;
+          await saveNote(currentNote);
+          await reloadNotes();
+          return;
+        }
+      }
     }
 
     if (shouldShowControls(input, key)) {

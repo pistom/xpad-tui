@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Box, Text } from 'ink';
 import type { Note, SelectionMode } from '../types/index.js';
+import { isTaskLine } from '../utils/noteUtils.js';
 
 type NoteViewProps = {
   note?: Note;
@@ -102,11 +103,17 @@ function renderLineWithCharSelection(
   charSelection: { start: number; end: number } | null,
   isEmpty: boolean,
   note: Note | undefined,
-  cursorCol?: number | null
+  cursorCol?: number | null,
+  isTask?: boolean
 ): React.ReactElement {
+  const getColor = () => {
+    if (isEmpty) return 'gray';
+    return note?.textColor;
+  };
+  
   if (!charSelection && cursorCol === null) {
-    const color = isEmpty ? 'gray' : note?.textColor;
-    return <Text color={color}>{isEmpty ? ' ' : line}</Text>;
+    const color = getColor();
+    return <Text color={color} dimColor={isTask}>{isEmpty ? ' ' : line}</Text>;
   }
   
   if (!charSelection && cursorCol !== null && cursorCol !== undefined) {
@@ -114,10 +121,10 @@ function renderLineWithCharSelection(
     const before = line.slice(0, cursorCol);
     const cursor = line[cursorCol] || ' ';
     const after = line.slice(cursorCol + 1);
-    const color = isEmpty ? 'gray' : note?.textColor;
+    const color = getColor();
     
     return (
-      <Text>
+      <Text dimColor={isTask}>
         {before && <Text color={color}>{before}</Text>}
         <Text backgroundColor="gray" color="black" bold>{cursor}</Text>
         {after && <Text color={color}>{after}</Text>}
@@ -133,10 +140,10 @@ function renderLineWithCharSelection(
     const selected = line.slice(start, end);
     const after = line.slice(end);
 
-    const color = isEmpty ? 'gray' : note?.textColor;
+    const color = getColor();
 
     return (
-      <Text>
+      <Text dimColor={isTask}>
         {before && <Text color={color}>{before}</Text>}
         {selected && <Text backgroundColor="cyan" color="black">{selected}</Text>}
         {after && <Text color={color}>{after}</Text>}
@@ -146,8 +153,8 @@ function renderLineWithCharSelection(
   }
 
   // Fallback
-  const color = isEmpty ? 'gray' : note?.textColor;
-  return <Text color={color}>{isEmpty ? ' ' : line}</Text>;
+  const color = getColor();
+  return <Text color={color} dimColor={isTask}>{isEmpty ? ' ' : line}</Text>;
 }
 
 export default function NoteView({
@@ -197,6 +204,7 @@ export default function NoteView({
         {visibleLines.map((line, idx) => {
           const globalIdx = idx + noteScroll;
           const isEmpty = line.trim().length === 0;
+          const isTask = isTaskLine(line);
           
           if (selectionMode === 'char') {
             const charSelection = getCharSelectionForLine(
@@ -219,7 +227,8 @@ export default function NoteView({
                   charSelection, 
                   isEmpty, 
                   note,
-                  showCursor ? noteCursorCol : null
+                  showCursor ? noteCursorCol : null,
+                  isTask
                 )}
               </Box>
             );
@@ -230,7 +239,7 @@ export default function NoteView({
             
             if (selected) {
               return (
-                <Text key={idx} backgroundColor="cyan" color="black">
+                <Text key={idx} backgroundColor="cyan" color="black" dimColor={isTask}>
                   {isEmpty ? ' ' : line}
                 </Text>
               );
@@ -238,13 +247,13 @@ export default function NoteView({
               // Show single-character cursor in line mode too
               return (
                 <Box key={idx}>
-                  {renderLineWithCharSelection(line, null, isEmpty, note, noteCursorCol)}
+                  {renderLineWithCharSelection(line, null, isEmpty, note, noteCursorCol, isTask)}
                 </Box>
               );
             } else {
               const color = isEmpty ? 'gray' : note?.textColor;
               return (
-                <Text key={idx} color={color}>
+                <Text key={idx} color={color} dimColor={isTask}>
                   {isEmpty ? ' ' : line}
                 </Text>
               );

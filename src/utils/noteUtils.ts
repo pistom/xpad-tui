@@ -95,3 +95,67 @@ export function getNotesFromDirectory(directory: string): NoteInfo[] {
 
   return notes;
 }
+
+/**
+ * Checks if a line is a task line (starts with [ ], [✔], or [x])
+ */
+export function isTaskLine(line: string): boolean {
+  const trimmed = line.trimStart();
+  return trimmed.startsWith('[ ]') || trimmed.startsWith('[✔]') || trimmed.startsWith('[x]');
+}
+
+/**
+ * Gets the task state from a line
+ */
+export function getTaskState(line: string): 'empty' | 'checked' | 'cancelled' | null {
+  const trimmed = line.trimStart();
+  if (trimmed.startsWith('[ ]')) return 'empty';
+  if (trimmed.startsWith('[✔]')) return 'checked';
+  if (trimmed.startsWith('[x]')) return 'cancelled';
+  return null;
+}
+
+/**
+ * Toggles a task line between empty and checked
+ */
+export function toggleTaskCheck(line: string): string {
+  const state = getTaskState(line);
+  if (state === null) return line;
+  
+  const leadingWhitespace = line.match(/^\s*/)?.[0] || '';
+  const rest = line.replace(/^\s*\[([ ✔x])\]/, '').trimStart();
+  
+  if (state === 'empty') {
+    return `${leadingWhitespace}[✔] ${rest}`;
+  } else {
+    return `${leadingWhitespace}[ ] ${rest}`;
+  }
+}
+
+/**
+ * Toggles a task line to cancelled state
+ */
+export function toggleTaskCancel(line: string): string {
+  const state = getTaskState(line);
+  if (state === null) return line;
+  
+  const leadingWhitespace = line.match(/^\s*/)?.[0] || '';
+  const rest = line.replace(/^\s*\[([ ✔x])\]/, '').trimStart();
+  
+  if (state === 'cancelled') {
+    return `${leadingWhitespace}[ ] ${rest}`;
+  } else {
+    return `${leadingWhitespace}[x] ${rest}`;
+  }
+}
+
+/**
+ * Updates a specific line in note content
+ */
+export function updateNoteLineContent(content: string, lineIndex: number, newLineContent: string): string {
+  const lines = content.split(/\r?\n/);
+  if (lineIndex < 0 || lineIndex >= lines.length) return content;
+  
+  lines[lineIndex] = newLineContent;
+  return lines.join('\n');
+}
