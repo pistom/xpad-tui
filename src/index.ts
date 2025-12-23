@@ -4,6 +4,7 @@ import { render } from 'ink';
 import React from 'react';
 import App from './app.js';
 import { loadConfig, resolveNotesDir } from './config.js';
+import { createNote } from './services/noteService.js';
 
 const program = new Command();
 
@@ -12,12 +13,25 @@ program
   .description('TUI to manage xpad sticky notes')
   .option('-d, --dir <dir>', 'xpad notes directory')
   .option('-e, --editor <editor>', 'editor command to use for editing notes')
+  .option('-n, --new <title>', 'create a new note with the given title and exit')
   .action(async (opts) => {
     const cfg = await loadConfig();
     
     // CLI args have highest priority, then config file, then defaults
     const dir = opts.dir || resolveNotesDir(cfg);
     const cliEditor = opts.editor; // Only pass CLI arg, let App compute effective editor
+
+    // If -n/--new flag is provided, create the note and exit without opening the UI
+    if (opts.new) {
+      try {
+        const note = await createNote(dir, opts.new, opts.new);
+        console.log(`Note created: ${note.title}`);
+        process.exit(0);
+      } catch (error) {
+        console.error('Failed to create note:', error instanceof Error ? error.message : error);
+        process.exit(1);
+      }
+    }
 
     // Switch to the alternate screen buffer so the original terminal contents
     // are preserved and automatically restored on exit when we leave the

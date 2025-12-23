@@ -16,6 +16,7 @@ Quick start:
 
 - `-d, --dir <dir>`: xpad notes directory (default: `~/.config/xpad`)
 - `-e, --editor <editor>`: editor command to use (default: `nano`)
+- `-n, --new <title>`: create a new note with the given title and exit (without opening the TUI)
 
 **Parameter Priority**: CLI arguments > config file > environment variables > defaults
 
@@ -29,6 +30,12 @@ xpad-tui --editor nano
 
 # Both options
 xpad-tui -d ~/my-notes --editor code
+
+# Create a note without opening the TUI
+xpad-tui -n "My new note"
+
+# Create a note in custom directory
+xpad-tui -d ~/my-notes -n "Shopping list"
 ```
 
 Controls in TUI:
