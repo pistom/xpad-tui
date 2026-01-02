@@ -323,6 +323,8 @@ type NoteActionHandlers = {
   deleteNote: () => void;
   toggleHidden: () => Promise<void>;
   toggleShowHidden: () => void;
+  encryptNote: () => void;
+  permanentDecrypt: () => void;
 };
 
 export function handleNoteActionInput(
@@ -352,6 +354,16 @@ export function handleNoteActionInput(
 
   if (input === 'a') {
     handlers.toggleShowHidden();
+    return true;
+  }
+
+  if (input === 'E' && currentNote) {
+    handlers.encryptNote();
+    return true;
+  }
+
+  if (input === 'D' && currentNote) {
+    handlers.permanentDecrypt();
     return true;
   }
 

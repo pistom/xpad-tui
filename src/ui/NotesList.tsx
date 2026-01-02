@@ -57,7 +57,16 @@ export default function NotesList({ notes, selectedIndex, width, height }: Notes
           const globalIdx = start + idx;
           const isSelected = globalIdx === clampedSelection;
           const leading = isSelected ? '▶ ' : '  ';
-          const title = truncateText(note.title || '', Math.max(0, cardWidth - 2));
+          
+          // Add lock icon based on encryption state
+          let lockIcon = '';
+          if (note.encrypted && !note.isDecrypted) {
+            lockIcon = '🔒 '; // Locked
+          } else if (note.encrypted && note.isDecrypted) {
+            lockIcon = '🔓 '; // Unlocked
+          }
+          
+          const title = truncateText(lockIcon + (note.title || ''), Math.max(0, cardWidth - 2));
           const showSeparator = remainingSeparators > 0;
           if (showSeparator) remainingSeparators -= 1;
           const separatorLength = Math.max(8, Math.max(0, cardWidth - 2));

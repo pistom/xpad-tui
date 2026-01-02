@@ -48,6 +48,12 @@ export function parseInfoFile(filePath: string): NoteInfo | null {
         case 'hidden':
           info.hidden = value === '1';
           break;
+        case 'encrypted':
+          info.encrypted = value === '1';
+          break;
+        case 'title':
+          info.title = value;
+          break;
         case 'back':
           info.backgroundColor = toHex(value);
           break;

@@ -10,8 +10,9 @@ import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { useAppConfig } from './hooks/useAppConfig.js';
 import { useNotesList } from './hooks/useNotesList.js';
 import { useNoteSelection } from './hooks/useNoteSelection.js';
-import { setNoteHidden, removeNote, createNote, saveNote } from './services/noteService.js';
+import { setNoteHidden, removeNote, createNote, saveNote, decryptNote, setNoteEncrypted } from './services/noteService.js';
 import { editNoteInEditor, createNoteInEditor } from './services/editorService.js';
+import PasswordPrompt from './ui/PasswordPrompt.js';
 import { resolveNotesDir } from './config.js';
 import { copyToClipboardOsc52, calculateLayoutDimensions, clampIndex } from './utils/uiUtils.js';
 import { 
@@ -93,6 +94,12 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
   const [pendingDeleteIdx, setPendingDeleteIdx] = useState<number | null>(null);
   const [configFocusedField, setConfigFocusedField] = useState<ConfigFieldFocus>('editor');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  
+  const [passwordPromptActive, setPasswordPromptActive] = useState(false);
+  const [passwordPromptMessage, setPasswordPromptMessage] = useState('');
+  const [passwordPromptAction, setPasswordPromptAction] = useState<'encrypt' | 'decrypt' | 'create' | 're-encrypt'>('decrypt');
+  const [pendingReEncryptNoteId, setPendingReEncryptNoteId] = useState<string | null>(null);
   
   const [selectionActive, setSelectionActive] = useState(false);
   const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
@@ -204,9 +211,33 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     const note = notes[idx];
     if (!note) return;
     
+    // Block editing of locked encrypted notes
+    if (note.encrypted && !note.isDecrypted) {
+      setErrorMessage('Cannot edit locked encrypted note. Press E to decrypt first.');
+      return;
+    }
+    
     try {
+      // Check if note was encrypted before editing
+      const wasEncryptedAndDecrypted = note.encrypted && note.isDecrypted;
+      
       await editNoteInEditor(note, config, effectiveEditor);
+      
+      // If note was encrypted, temporarily remove encryption flag before reload
+      // This allows us to reload the plain text content that was just edited
+      if (wasEncryptedAndDecrypted) {
+        await setNoteEncrypted(note, false);
+      }
+      
       await reloadNotes();
+      
+      // If the note was encrypted, prompt to re-encrypt
+      if (wasEncryptedAndDecrypted) {
+        setPendingReEncryptNoteId(note.id);
+        setPasswordPromptMessage('Re-encrypt note after editing');
+        setPasswordPromptAction('re-encrypt');
+        setPasswordPromptActive(true);
+      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     }
@@ -252,9 +283,125 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     setIdx(clampIndex(idx, notes.length));
   };
 
+  const handleEncryptionToggle = () => {
+    const note = notes[idx];
+    if (!note) return;
+
+    if (note.encrypted && !note.isDecrypted) {
+      // Decrypt
+      setPasswordPromptMessage('Decrypt note');
+      setPasswordPromptAction('decrypt');
+      setPasswordPromptActive(true);
+    } else if (note.encrypted && note.isDecrypted) {
+      // Already decrypted, re-lock it
+      setErrorMessage('Note re-locked. Reload to see encrypted version.');
+    } else {
+      // Encrypt
+      setPasswordPromptMessage('Encrypt note');
+      setPasswordPromptAction('encrypt');
+      setPasswordPromptActive(true);
+    }
+  };
+
+  const handlePermanentDecrypt = async () => {
+    const note = notes[idx];
+    if (!note) return;
+
+    if (!note.encrypted) {
+      setErrorMessage('Note is not encrypted');
+      return;
+    }
+
+    if (!note.isDecrypted) {
+      setErrorMessage('Decrypt the note first (press E) before permanent decryption');
+      return;
+    }
+
+    try {
+      // Remove encryption flag
+      await setNoteEncrypted(note, false);
+      // Save as plain text
+      note.encrypted = false;
+      note.isDecrypted = false;
+      await saveNote(note);
+      // Reload
+      await reloadNotes();
+      setSuccessMessage('Note permanently decrypted (plain text)');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to decrypt note');
+    }
+  };
+
+  const handlePasswordSubmit = async (password: string) => {
+    setPasswordPromptActive(false);
+    
+    // For re-encrypt, use the pending note ID to get fresh content
+    let note = notes[idx];
+    if (passwordPromptAction === 're-encrypt' && pendingReEncryptNoteId) {
+      const noteToEncrypt = notes.find(n => n.id === pendingReEncryptNoteId);
+      if (!noteToEncrypt) {
+        setErrorMessage('Note not found for re-encryption');
+        setPendingReEncryptNoteId(null);
+        return;
+      }
+      note = noteToEncrypt;
+      setPendingReEncryptNoteId(null);
+    }
+    
+    if (!note) return;
+
+    try {
+      if (passwordPromptAction === 'decrypt') {
+        const decrypted = await decryptNote(note, password);
+        // Update the note in the array
+        notes[idx] = decrypted;
+        // Force state update
+        setIdx(idx);
+        setSuccessMessage('Note decrypted successfully');
+      } else if (passwordPromptAction === 'encrypt' || passwordPromptAction === 're-encrypt') {
+        // Extract title from first line before encrypting
+        const firstLine = note.content.split(/\r?\n/)[0] || '';
+        const noteTitle = firstLine.trim() || note.id;
+        // First set the encrypted flag in metadata with title
+        await setNoteEncrypted(note, true, noteTitle);
+        // Mark note as encrypted in memory so saveNote knows to encrypt
+        note.encrypted = true;
+        // Save encrypted content
+        await saveNote(note, password);
+        // Reload to get the encrypted version from disk
+        await reloadNotes();
+        setSuccessMessage(passwordPromptAction === 're-encrypt' ? 'Note re-encrypted successfully' : 'Note encrypted successfully');
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Encryption operation failed');
+    }
+  };
+
+  const handlePasswordCancel = () => {
+    setPasswordPromptActive(false);
+    
+    // If user cancelled re-encryption, warn them
+    if (passwordPromptAction === 're-encrypt') {
+      setPendingReEncryptNoteId(null);
+      setErrorMessage('⚠️  WARNING: Note is now UNENCRYPTED (plain text). Press E to encrypt it.');
+    }
+  };
+
   useInput(async (input: string, key: InkKey) => {
     if (errorMessage) {
       setErrorMessage(null);
+      return;
+    }
+
+    if (successMessage) {
+      setSuccessMessage(null);
+      return;
+    }
+
+    if (passwordPromptActive) {
+      if (key.escape) {
+        handlePasswordCancel();
+      }
       return;
     }
 
@@ -632,6 +779,8 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
       },
       toggleHidden: handleToggleHidden,
       toggleShowHidden: () => setShowHidden(prev => !prev),
+      encryptNote: handleEncryptionToggle,
+      permanentDecrypt: handlePermanentDecrypt,
     })) {
       return;
     }
@@ -653,7 +802,7 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     setConfigEditing(false);
   };
 
-  const hasPopup = showControls || showDeleteConfirm || configEditing || errorMessage !== null;
+  const hasPopup = showControls || showDeleteConfirm || configEditing || errorMessage !== null || successMessage !== null || passwordPromptActive;
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
@@ -792,6 +941,44 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
               <Text color="gray" dimColor>Press any key to dismiss</Text>
             </Box>
           </Box>
+        </Box>
+      )}
+      {successMessage !== null && (
+        <Box
+          flexDirection="column"
+          justifyContent="center"
+          alignItems="center"
+          position="absolute"
+          width={columns}
+          height={rows}
+        >
+          <Box flexDirection="column" padding={1} borderStyle="round" borderColor="green">
+            <Box marginBottom={1}>
+              <Text bold color="green">Success</Text>
+            </Box>
+            <Box>
+              <Text>{successMessage}</Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text color="gray" dimColor>Press any key to dismiss</Text>
+            </Box>
+          </Box>
+        </Box>
+      )}
+      {passwordPromptActive && (
+        <Box
+          flexDirection="column"
+          justifyContent="center"
+          alignItems="center"
+          position="absolute"
+          width={columns}
+          height={rows}
+        >
+          <PasswordPrompt
+            message={passwordPromptMessage}
+            onSubmit={handlePasswordSubmit}
+            onCancel={handlePasswordCancel}
+          />
         </Box>
       )}
       {configEditing && (

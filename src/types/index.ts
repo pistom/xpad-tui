@@ -14,6 +14,8 @@ export type Note = {
   backgroundColor?: string;
   textColor?: string;
   font?: string;
+  encrypted?: boolean;
+  isDecrypted?: boolean; // Runtime flag: true if encrypted but currently decrypted
 };
 
 export type AppConfig = {
@@ -34,6 +36,8 @@ export type NoteInfo = {
   textColor: string;
   font: string;
   contentFile: string;
+  encrypted: boolean;
+  title?: string;
 };
 
 export type PaneFocus = 'list' | 'note';

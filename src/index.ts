@@ -14,6 +14,7 @@ program
   .option('-d, --dir <dir>', 'xpad notes directory')
   .option('-e, --editor <editor>', 'editor command to use for editing notes')
   .option('-n, --new <title>', 'create a new note with the given title and exit')
+  .option('--encrypt', 'encrypt the new note (use with -n)')
   .action(async (opts) => {
     const cfg = await loadConfig();
     
@@ -24,8 +25,66 @@ program
     // If -n/--new flag is provided, create the note and exit without opening the UI
     if (opts.new) {
       try {
-        const note = await createNote(dir, opts.new, opts.new);
-        console.log(`Note created: ${note.title}`);
+        let password: string | undefined;
+        
+        if (opts.encrypt) {
+          // Prompt for password with hidden input
+          const readline = await import('readline');
+          const { stdin: input, stdout: output } = process;
+          
+          const rl = readline.createInterface({
+            input,
+            output,
+            terminal: true
+          });
+          
+          password = await new Promise<string>((resolve) => {
+            // Hide input by muting stdout
+            const onData = (char: Buffer) => {
+              const str = char.toString('utf8');
+              if (str === '\r' || str === '\n') {
+                output.write('\n');
+                input.removeListener('data', onData);
+                rl.close();
+              } else if (str === '\x7f' || str === '\b') {
+                // Backspace
+                if (password && password.length > 0) {
+                  password = password.slice(0, -1);
+                }
+              } else if (str === '\x03') {
+                // Ctrl+C
+                process.exit(0);
+              } else {
+                password = (password || '') + str;
+              }
+            };
+            
+            let password = '';
+            output.write('Enter password for encryption: ');
+            
+            if (input.isTTY && input.setRawMode) {
+              input.setRawMode(true);
+            }
+            
+            input.on('data', onData);
+            
+            // Fallback timeout to resolve
+            rl.on('close', () => {
+              if (input.isTTY && input.setRawMode) {
+                input.setRawMode(false);
+              }
+              resolve(password);
+            });
+          });
+          
+          if (!password) {
+            console.error('Password is required for encryption');
+            process.exit(1);
+          }
+        }
+        
+        const note = await createNote(dir, opts.new, opts.new, opts.encrypt, password);
+        console.log(`Note created${opts.encrypt ? ' and encrypted' : ''}: ${note.title}`);
         process.exit(0);
       } catch (error) {
         console.error('Failed to create note:', error instanceof Error ? error.message : error);
