@@ -14,9 +14,22 @@ export function copyToClipboardOsc52(text: string): boolean {
   }
 }
 
-export function calculateLayoutDimensions(columns: number) {
-  const leftWidth = Math.max(30, Math.floor(columns * 0.35));
-  const rightWidth = Math.max(20, columns - leftWidth - 3);
+export const MIN_NOTE_VIEW_WIDTH = 20;
+export const MIN_NOTES_LIST_WIDTH = 20;
+export const NOTES_PANE_GUTTER = 3;
+
+export function calculateLayoutDimensions(columns: number, preferredListWidth?: number) {
+  const total = Math.max(columns, MIN_NOTES_LIST_WIDTH + MIN_NOTE_VIEW_WIDTH + NOTES_PANE_GUTTER);
+  const fallbackListWidth = Math.max(MIN_NOTES_LIST_WIDTH, Math.floor(total * 0.35));
+  const rawPreferred = Number.isFinite(preferredListWidth ?? NaN)
+    ? (preferredListWidth as number)
+    : fallbackListWidth;
+  const clampedListWidth = Math.max(
+    MIN_NOTES_LIST_WIDTH,
+    Math.min(rawPreferred, total - MIN_NOTE_VIEW_WIDTH)
+  );
+  const leftWidth = clampedListWidth;
+  const rightWidth = Math.max(MIN_NOTE_VIEW_WIDTH, total - leftWidth - NOTES_PANE_GUTTER);
   return { leftWidth, rightWidth };
 }
 

@@ -61,6 +61,8 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     setConfigEditorInput,
     configNotesDirInput,
     setConfigNotesDirInput,
+    configNotesListWidthInput,
+    setConfigNotesListWidthInput,
     updateConfig
   } = useAppConfig(dir);
   
@@ -437,9 +439,16 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
         setConfigEditing(false);
         setConfigEditorInput(config.editor || '');
         setConfigNotesDirInput(config.notesDir || '');
+        setConfigNotesListWidthInput(
+          typeof config.notesListWidth === 'number' ? String(config.notesListWidth) : ''
+        );
       }
       if (key.tab) {
-        setConfigFocusedField(f => f === 'editor' ? 'notesDir' : 'editor');
+        setConfigFocusedField(f => {
+          if (f === 'editor') return 'notesDir';
+          if (f === 'notesDir') return 'notesListWidth';
+          return 'editor';
+        });
       }
       return;
     }
@@ -600,6 +609,9 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     if (shouldStartConfigEdit(input)) {
       setConfigEditorInput(config.editor || '');
       setConfigNotesDirInput(config.notesDir || '');
+      setConfigNotesListWidthInput(
+        typeof config.notesListWidth === 'number' ? String(config.notesListWidth) : ''
+      );
       setConfigFocusedField('editor');
       setConfigEditing(true);
       return;
@@ -786,7 +798,7 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     }
   });
 
-  const { leftWidth, rightWidth } = calculateLayoutDimensions(columns);
+  const { leftWidth, rightWidth } = calculateLayoutDimensions(columns, config.notesListWidth);
 
   const handleEditorSubmit = async (value: string) => {
     const newConfig = { ...config, editor: value.trim() || undefined };
@@ -799,6 +811,16 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     const newConfig = { ...config, notesDir };
     await updateConfig(newConfig);
     setEffectiveDir(resolveNotesDir(newConfig));
+    setConfigEditing(false);
+  };
+
+  const handleNotesListWidthSubmit = async (value: string) => {
+    const trimmed = value.trim();
+    const parsed = trimmed === '' ? undefined : Number(trimmed);
+    const normalized = Number.isFinite(parsed) ? Math.max(20, Math.floor(parsed as number)) : undefined;
+    const newConfig = { ...config, notesListWidth: normalized };
+    await updateConfig(newConfig);
+    setConfigNotesListWidthInput(normalized ? String(normalized) : '');
     setConfigEditing(false);
   };
 
@@ -985,11 +1007,14 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
         <ConfigEditor
           editorValue={configEditorInput}
           notesDirValue={configNotesDirInput}
+          notesListWidthValue={configNotesListWidthInput}
           focusedField={configFocusedField}
           onEditorChange={setConfigEditorInput}
           onNotesDirChange={setConfigNotesDirInput}
+          onNotesListWidthChange={setConfigNotesListWidthInput}
           onEditorSubmit={handleEditorSubmit}
           onNotesDirSubmit={handleNotesDirSubmit}
+          onNotesListWidthSubmit={handleNotesListWidthSubmit}
         />
       )}
     </Box>

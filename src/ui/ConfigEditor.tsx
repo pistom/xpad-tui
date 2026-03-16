@@ -6,21 +6,27 @@ import type { ConfigFieldFocus } from '../types/index.js';
 type ConfigEditorProps = {
   editorValue: string;
   notesDirValue: string;
+  notesListWidthValue: string;
   focusedField: ConfigFieldFocus;
   onEditorChange: (value: string) => void;
   onNotesDirChange: (value: string) => void;
+  onNotesListWidthChange: (value: string) => void;
   onEditorSubmit: (value: string) => void;
   onNotesDirSubmit: (value: string) => void;
+  onNotesListWidthSubmit: (value: string) => void;
 };
 
 export default function ConfigEditor({
   editorValue,
   notesDirValue,
+  notesListWidthValue,
   focusedField,
   onEditorChange,
   onNotesDirChange,
+  onNotesListWidthChange,
   onEditorSubmit,
   onNotesDirSubmit,
+  onNotesListWidthSubmit,
 }: ConfigEditorProps): React.ReactElement {
   return (
     <Box 
@@ -47,6 +53,15 @@ export default function ConfigEditor({
           defaultValue={notesDirValue}
           onChange={onNotesDirChange}
           onSubmit={onNotesDirSubmit}
+        />
+      </Box>
+      <Box marginTop={1} flexDirection="row" width="100%">
+        <Text color="gray">Notes list width (columns, default 30): </Text>
+        <TextInput
+          isDisabled={focusedField !== 'notesListWidth'}
+          defaultValue={notesListWidthValue}
+          onChange={onNotesListWidthChange}
+          onSubmit={onNotesListWidthSubmit}
         />
       </Box>
       <Box marginTop={1} flexDirection="row" width="100%">

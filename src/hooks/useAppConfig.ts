@@ -12,6 +12,8 @@ type UseAppConfigReturn = {
   setConfigEditorInput: (value: string) => void;
   configNotesDirInput: string;
   setConfigNotesDirInput: (value: string) => void;
+  configNotesListWidthInput: string;
+  setConfigNotesListWidthInput: (value: string) => void;
   updateConfig: (config: AppConfig) => Promise<void>;
 };
 
@@ -21,6 +23,7 @@ export function useAppConfig(initialDir: string): UseAppConfigReturn {
   const [configEditing, setConfigEditing] = useState(false);
   const [configEditorInput, setConfigEditorInput] = useState('');
   const [configNotesDirInput, setConfigNotesDirInput] = useState('');
+  const [configNotesListWidthInput, setConfigNotesListWidthInput] = useState('');
 
   useEffect(() => {
     const loadInitialConfig = async () => {
@@ -28,6 +31,9 @@ export function useAppConfig(initialDir: string): UseAppConfigReturn {
       setConfig(cfg);
       setConfigEditorInput(cfg.editor || '');
       setConfigNotesDirInput(cfg.notesDir || '');
+      setConfigNotesListWidthInput(
+        typeof cfg.notesListWidth === 'number' ? String(cfg.notesListWidth) : ''
+      );
       // Use the initialDir passed from CLI, which already has correct priority
       setEffectiveDir(initialDir);
     };
@@ -50,6 +56,8 @@ export function useAppConfig(initialDir: string): UseAppConfigReturn {
     setConfigEditorInput,
     configNotesDirInput,
     setConfigNotesDirInput,
+    configNotesListWidthInput,
+    setConfigNotesListWidthInput,
     updateConfig
   };
 }
