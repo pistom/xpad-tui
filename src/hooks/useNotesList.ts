@@ -3,7 +3,7 @@ import { loadNotes } from '../services/noteService.js';
 import type { Note } from '../types/index.js';
 import fs from 'fs/promises';
 
-export function useNotesList(effectiveDir: string, showHidden: boolean) {
+export function useNotesList(effectiveDir: string, showArchived: boolean) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [dirExists, setDirExists] = useState(true);
 
@@ -13,7 +13,7 @@ export function useNotesList(effectiveDir: string, showHidden: boolean) {
       await fs.mkdir(effectiveDir, { recursive: true });
       setDirExists(true);
       const allNotes = await loadNotes(effectiveDir);
-      const filtered = showHidden ? allNotes : allNotes.filter((note) => !note.hidden);
+      const filtered = showArchived ? allNotes : allNotes.filter((note) => !note.archived);
       setNotes(filtered);
     } catch {
       setDirExists(false);
@@ -23,7 +23,7 @@ export function useNotesList(effectiveDir: string, showHidden: boolean) {
 
   useEffect(() => {
     reloadNotes();
-  }, [effectiveDir, showHidden]);
+  }, [effectiveDir, showArchived]);
 
   return { notes, setNotes, dirExists, reloadNotes };
 }

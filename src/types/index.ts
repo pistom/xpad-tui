@@ -1,20 +1,17 @@
 export type Note = {
+  /** Stable identifier; also the file name without the `.md` extension. */
   id: string;
   title: string;
+  /** Note body (plain text, or a placeholder while an encrypted note is locked). */
   content: string;
   filePath: string;
-  width?: number;
-  height?: number;
-  x?: number;
-  y?: number;
-  followFont?: boolean;
-  followColor?: boolean;
-  sticky?: boolean;
-  hidden?: boolean;
-  backgroundColor?: string;
-  textColor?: string;
-  font?: string;
+  color?: string;
+  archived?: boolean;
   encrypted?: boolean;
+  created?: string;
+  updated?: string;
+  /** Frontmatter keys this app doesn't know about; preserved on save. */
+  extraMeta?: Record<string, string | boolean>;
   isDecrypted?: boolean; // Runtime flag: true if encrypted but currently decrypted
 };
 
@@ -22,23 +19,6 @@ export type AppConfig = {
   editor?: string;
   notesDir?: string;
   notesListWidth?: number;
-};
-
-export type NoteInfo = {
-  width: number;
-  height: number;
-  x: number;
-  y: number;
-  followFont: boolean;
-  followColor: boolean;
-  sticky: boolean;
-  hidden: boolean;
-  backgroundColor: string;
-  textColor: string;
-  font: string;
-  contentFile: string;
-  encrypted: boolean;
-  title?: string;
 };
 
 export type PaneFocus = 'list' | 'note';

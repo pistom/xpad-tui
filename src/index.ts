@@ -5,6 +5,7 @@ import React from 'react';
 import App from './app.js';
 import { loadConfig, resolveNotesDir } from './config.js';
 import { createNote } from './services/noteService.js';
+import { findLegacyInfoFiles, migrateLegacyNotes, migrateTaskSyntax } from './services/migration.js';
 
 const program = new Command();
 
@@ -15,12 +16,39 @@ program
   .option('-e, --editor <editor>', 'editor command to use for editing notes')
   .option('-n, --new <title>', 'create a new note with the given title and exit')
   .option('--encrypt', 'encrypt the new note (use with -n)')
+  .option('--migrate', 'convert legacy xpad notes (info-*/content-*) to .md files, convert task checkboxes to markdown, and exit')
+  .option('--dry-run', 'with --migrate: only show what would be migrated')
   .action(async (opts) => {
     const cfg = await loadConfig();
     
     // CLI args have highest priority, then config file, then defaults
     const dir = opts.dir || resolveNotesDir(cfg);
     const cliEditor = opts.editor; // Only pass CLI arg, let App compute effective editor
+
+    if (opts.migrate) {
+      const result = await migrateLegacyNotes(dir, { dryRun: !!opts.dryRun });
+      const prefix = opts.dryRun ? '[dry run] ' : '';
+      for (const m of result.migrated) console.log(`${prefix}${m.from} -> ${m.to}  (${m.title})`);
+      for (const f of result.failed) console.error(`${prefix}FAILED ${f.file}: ${f.reason}`);
+      for (const o of result.orphans) console.warn(`${prefix}orphan (no info file, left in place): ${o}`);
+      const taskFiles = await migrateTaskSyntax(dir, { dryRun: !!opts.dryRun });
+      for (const f of taskFiles) console.log(`${prefix}converted task checkboxes: ${f}`);
+      console.log(
+        `${prefix}${result.migrated.length} migrated, ${result.failed.length} failed, ${result.orphans.length} orphaned, ` +
+        `${taskFiles.length} with converted tasks.` +
+        (opts.dryRun || result.migrated.length === 0 ? '' : ` Legacy files moved to ${result.backupDir}`)
+      );
+      process.exit(result.failed.length > 0 ? 1 : 0);
+    }
+
+    const legacy = await findLegacyInfoFiles(dir);
+    if (legacy.length > 0) {
+      console.error(
+        `Found ${legacy.length} notes in the old xpad format in ${dir}.\n` +
+        `Run "xpad-tui --migrate --dry-run" to preview, then "xpad-tui --migrate" to convert them to .md files.`
+      );
+      process.exit(1);
+    }
 
     // If -n/--new flag is provided, create the note and exit without opening the UI
     if (opts.new) {

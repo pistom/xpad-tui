@@ -41,7 +41,7 @@ export default function NotesGridView({
   height,
   selectedIndex,
 }: NotesGridViewProps): React.ReactElement {
-  const visibleNotes = notes.filter((note) => !note.hidden);
+  const visibleNotes = notes.filter((note) => !note.archived);
   const clampedSelected = Math.max(0, Math.min(selectedIndex, Math.max(visibleNotes.length - 1, 0)));
 
   const headerRows = 2; // title + spacing
@@ -101,7 +101,7 @@ export default function NotesGridView({
                     paddingY={0}
                     flexDirection="column"
                   >
-                    <Text bold color={note.textColor || 'yellow'}>{title}</Text>
+                    <Text bold color={note.color || 'yellow'}>{title}</Text>
                     <Box flexDirection="column" marginTop={1}>
                       {previewLines.map((line, idx) => (
                         <Text key={idx} dimColor>{line}</Text>

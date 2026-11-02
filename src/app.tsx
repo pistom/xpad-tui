@@ -10,7 +10,7 @@ import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { useAppConfig } from './hooks/useAppConfig.js';
 import { useNotesList } from './hooks/useNotesList.js';
 import { useNoteSelection } from './hooks/useNoteSelection.js';
-import { setNoteHidden, removeNote, createNote, saveNote, decryptNote, setNoteEncrypted } from './services/noteService.js';
+import { setNoteArchived, removeNote, createNote, saveNote, decryptNote } from './services/noteService.js';
 import { editNoteInEditor, createNoteInEditor } from './services/editorService.js';
 import PasswordPrompt from './ui/PasswordPrompt.js';
 import { resolveNotesDir } from './config.js';
@@ -69,13 +69,13 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
   // Compute effective editor: CLI arg > config > env > default
   const effectiveEditor = cliEditor || config.editor || process.env.EDITOR || 'vi';
   
-  const [showHidden, setShowHidden] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [filterActive, setFilterActive] = useState(false);
   const [filterInput, setFilterInput] = useState('');
   const [gridViewActive, setGridViewActive] = useState(false);
   const [gridSelectedIndex, setGridSelectedIndex] = useState(0);
   
-  const { notes: allNotes, dirExists, reloadNotes } = useNotesList(effectiveDir, showHidden);
+  const { notes: allNotes, dirExists, reloadNotes } = useNotesList(effectiveDir, showArchived);
   
   // Filter notes based on filter input
   const notes = React.useMemo(() => {
@@ -222,14 +222,14 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     try {
       // Check if note was encrypted before editing
       const wasEncryptedAndDecrypted = note.encrypted && note.isDecrypted;
-      
-      await editNoteInEditor(note, config, effectiveEditor);
-      
-      // If note was encrypted, temporarily remove encryption flag before reload
-      // This allows us to reload the plain text content that was just edited
+
+      // An encrypted note is saved as plain text after editing; the user is
+      // prompted right after to re-encrypt it with a password.
       if (wasEncryptedAndDecrypted) {
-        await setNoteEncrypted(note, false);
+        note.encrypted = false;
       }
+
+      await editNoteInEditor(note, config, effectiveEditor);
       
       await reloadNotes();
       
@@ -276,11 +276,11 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     setPendingDeleteIdx(null);
   };
 
-  const handleToggleHidden = async () => {
+  const handleToggleArchived = async () => {
     const note = notes[idx];
     if (!note) return;
     
-    await setNoteHidden(note, !note.hidden);
+    await setNoteArchived(note, !note.archived);
     await reloadNotes();
     setIdx(clampIndex(idx, notes.length));
   };
@@ -320,8 +320,6 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     }
 
     try {
-      // Remove encryption flag
-      await setNoteEncrypted(note, false);
       // Save as plain text
       note.encrypted = false;
       note.isDecrypted = false;
@@ -361,12 +359,7 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
         setIdx(idx);
         setSuccessMessage('Note decrypted successfully');
       } else if (passwordPromptAction === 'encrypt' || passwordPromptAction === 're-encrypt') {
-        // Extract title from first line before encrypting
-        const firstLine = note.content.split(/\r?\n/)[0] || '';
-        const noteTitle = firstLine.trim() || note.id;
-        // First set the encrypted flag in metadata with title
-        await setNoteEncrypted(note, true, noteTitle);
-        // Mark note as encrypted in memory so saveNote knows to encrypt
+        // Mark note as encrypted so saveNote encrypts it (title is stored in frontmatter)
         note.encrypted = true;
         // Save encrypted content
         await saveNote(note, password);
@@ -578,7 +571,12 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
       const lines = (currentNote.content || '').split(/\r?\n/);
       const currentLine = lines[noteCursor];
       
-      if (currentLine && isTaskLine(currentLine)) {
+      if (currentLine && isTaskLine(currentLine) && (input === ' ' || input === 'x')) {
+        if (currentNote.encrypted) {
+          setErrorMessage('Cannot toggle tasks in an encrypted note. Edit it with e instead.');
+          return;
+        }
+
         // Toggle check/uncheck with Space
         if (input === ' ') {
           const newLine = toggleTaskCheck(currentLine);
@@ -643,7 +641,7 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
 
     // Grid view navigation
     if (gridViewActive) {
-      const visibleNotes = notes.filter(note => !note.hidden);
+      const visibleNotes = notes.filter(note => !note.archived);
       const totalVisible = visibleNotes.length;
       if (totalVisible === 0) {
         setGridViewActive(false);
@@ -789,8 +787,8 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
         setPendingDeleteIdx(idx);
         setShowDeleteConfirm(true);
       },
-      toggleHidden: handleToggleHidden,
-      toggleShowHidden: () => setShowHidden(prev => !prev),
+      toggleArchived: handleToggleArchived,
+      toggleShowArchived: () => setShowArchived(prev => !prev),
       encryptNote: handleEncryptionToggle,
       permanentDecrypt: handlePermanentDecrypt,
     })) {
@@ -915,10 +913,10 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
                     <Text color="green">filtered: "{filterInput}"</Text>
                   </>
                 )}
-                {showHidden && (
+                {showArchived && (
                   <>
                     <Text color="gray"> | </Text>
-                    <Text color="yellow">showing hidden</Text>
+                    <Text color="yellow">showing archived</Text>
                   </>
                 )}
               </>

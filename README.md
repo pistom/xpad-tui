@@ -2,7 +2,7 @@
 
 # xpad-tui
 
-Terminal UI for managing xpad sticky notes.
+Terminal UI for managing sticky notes stored as Markdown files.
 
 Quick start:
 
@@ -18,6 +18,7 @@ Quick start:
 - `-e, --editor <editor>`: editor command to use (default: `nano`)
 - `-n, --new <title>`: create a new note with the given title and exit (without opening the TUI)
 - `--encrypt`: encrypt the new note (use with `-n`, will prompt for password)
+- `--migrate`: convert notes from the old xpad format (`info-*` + `content-*`) to `.md` files and exit (add `--dry-run` to preview)
 
 **Parameter Priority**: CLI arguments > config file > environment variables > defaults
 
@@ -50,7 +51,7 @@ Controls in TUI:
 - Editing: `e` edit note, `n` new note, `d` delete note
 - Visual select: `v` char mode, `V` line mode, `h/j/k/l` move, `w`/`b` word jump (char mode), `0`/`$` line start/end (char mode), `y` yank selection, `Y` yank whole note, `Esc` exit visual
 - Encryption: `E` encrypt/decrypt note (prompts for password), `D` permanently decrypt note (removes encryption, saves as plain text)
-- Hidden & config: `.` toggle note hidden, `a` show/hide hidden notes, `c` open config
+- Archive & config: `.` archive/unarchive note, `a` show/hide archived notes, `c` open config
 - Global: `?` show controls, `q` quit
 
 Editor selection:
@@ -59,15 +60,38 @@ Editor selection:
 - Press `c` in the TUI to open application configuration and set a default editor command
 - Configuration is saved to `~/.config/xpad/xpad-cli.conf`
 
+Storage format:
+
+- Each note is a single Markdown file `<id>.md` in the notes directory (e.g. `20261102-101500-a1b2.md`).
+  The file name is a stable id and does not change when the title changes; the title is the first line of the note.
+- Metadata is kept in YAML frontmatter at the top of the file:
+
+  ```markdown
+  ---
+  id: 20261102-101500-a1b2
+  color: "#f5e663"
+  archived: false
+  encrypted: false
+  created: 2026-11-02T10:15:00.000Z
+  updated: 2026-11-02T12:40:00.000Z
+  ---
+  # Shopping list
+  ...
+  ```
+
+  Unknown keys (e.g. `tags` added by another tool) are preserved when the note is saved.
+- Encrypted notes keep their frontmatter in plain text (plus `title`) and store the body as ASCII armor
+  (`-----BEGIN XPAD ENCRYPTED NOTE v1-----`): base64 of `[salt 16B][iv 16B][authTag 16B][ciphertext]`,
+  AES-256-GCM with a key derived via scrypt (N=16384, r=8, p=1, 32 bytes).
+- Migrating from the old xpad format: `xpad-tui --migrate --dry-run`, then `xpad-tui --migrate`.
+  Old files are moved to `.xpad-legacy/` in the notes directory (not deleted).
+
 Notes:
 
-- This tool works with xpad's storage: plain-text note files kept in `~/.config/xpad`.
-- **Encryption**: Notes can be encrypted using AES-256-GCM. 
+- **Encryption**: Notes can be encrypted using AES-256-GCM.
   - Press `E` to encrypt/decrypt a note, or use `--encrypt` with `-n` when creating from CLI
   - Encrypted notes show 🔒 icon (locked) or 🔓 icon (unlocked/decrypted)
   - Press `D` to permanently decrypt a note (removes encryption and saves as plain text)
   - After editing an encrypted note, you'll be prompted to re-encrypt it
-  - **Important**: Encrypted notes are NOT compatible with the original xpad application - they will appear as binary data
   - If you forget your password, the note cannot be recovered
   - Each note can have its own password
-- Flatpak packaging guidance will be added later.

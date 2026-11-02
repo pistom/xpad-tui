@@ -108,7 +108,7 @@ function renderLineWithCharSelection(
 ): React.ReactElement {
   const getColor = () => {
     if (isEmpty) return 'gray';
-    return note?.textColor;
+    return note?.color;
   };
   
   if (!charSelection && cursorCol === null) {
@@ -251,7 +251,7 @@ export default function NoteView({
                 </Box>
               );
             } else {
-              const color = isEmpty ? 'gray' : note?.textColor;
+              const color = isEmpty ? 'gray' : note?.color;
               return (
                 <Text key={idx} color={color} dimColor={isTask}>
                   {isEmpty ? ' ' : line}

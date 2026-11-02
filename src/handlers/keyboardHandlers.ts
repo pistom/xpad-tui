@@ -321,8 +321,8 @@ type NoteActionHandlers = {
   editNote: () => Promise<void>;
   createNote: () => Promise<void>;
   deleteNote: () => void;
-  toggleHidden: () => Promise<void>;
-  toggleShowHidden: () => void;
+  toggleArchived: () => Promise<void>;
+  toggleShowArchived: () => void;
   encryptNote: () => void;
   permanentDecrypt: () => void;
 };
@@ -348,12 +348,12 @@ export function handleNoteActionInput(
   }
 
   if (input === '.' && currentNote) {
-    handlers.toggleHidden();
+    handlers.toggleArchived();
     return true;
   }
 
   if (input === 'a') {
-    handlers.toggleShowHidden();
+    handlers.toggleShowArchived();
     return true;
   }
 

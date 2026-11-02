@@ -70,7 +70,7 @@ export default function NotesList({ notes, selectedIndex, width, height }: Notes
           const showSeparator = remainingSeparators > 0;
           if (showSeparator) remainingSeparators -= 1;
           const separatorLength = Math.max(8, Math.max(0, cardWidth - 2));
-          const titleColor = note.hidden ? 'gray' : note.textColor;
+          const titleColor = note.archived ? 'gray' : note.color;
           
           return (
             <React.Fragment key={note.id}>

@@ -50,8 +50,8 @@ const CONTROL_GROUPS: ControlGroup[] = [
     ],
   },
   {
-    title: 'Hidden & config',
-    items: ['. : Toggle note hidden', 'a : Show/Hide hidden notes', 'c : Open config'],
+    title: 'Archive & config',
+    items: ['. : Archive/unarchive note', 'a : Show/Hide archived notes', 'c : Open config'],
   },
   {
     title: 'Global',
