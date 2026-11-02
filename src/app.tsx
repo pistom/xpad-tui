@@ -12,6 +12,7 @@ import { useNotesList } from './hooks/useNotesList.js';
 import { useNoteSelection } from './hooks/useNoteSelection.js';
 import { setNoteArchived, removeNote, createNote, saveNote, decryptNote } from './services/noteService.js';
 import { editNoteInEditor, createNoteInEditor } from './services/editorService.js';
+import { isSyncEnabled, hasPendingChanges, pullNotes, syncNotes } from './services/gitSync.js';
 import PasswordPrompt from './ui/PasswordPrompt.js';
 import { resolveNotesDir } from './config.js';
 import { copyToClipboardOsc52, calculateLayoutDimensions, clampIndex } from './utils/uiUtils.js';
@@ -97,6 +98,12 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
   const [configFocusedField, setConfigFocusedField] = useState<ConfigFieldFocus>('editor');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Git sync: pull on startup, pull + push on `S`, optional sync on quit
+  const [syncAvailable, setSyncAvailable] = useState(false);
+  const [syncState, setSyncState] = useState<{ status: 'idle' | 'syncing' | 'ok' | 'error'; text: string }>({ status: 'idle', text: '' });
+  const [showQuitSyncPrompt, setShowQuitSyncPrompt] = useState(false);
+  const syncInProgress = React.useRef(false);
   
   const [passwordPromptActive, setPasswordPromptActive] = useState(false);
   const [passwordPromptMessage, setPasswordPromptMessage] = useState('');
@@ -124,6 +131,67 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     selectionCursor, 
     noteCursor
   );
+
+  const timeLabel = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const enabled = await isSyncEnabled(effectiveDir);
+      if (cancelled) return;
+      setSyncAvailable(enabled);
+      if (!enabled) {
+        setSyncState({ status: 'idle', text: '' });
+        return;
+      }
+      syncInProgress.current = true;
+      setSyncState({ status: 'syncing', text: 'pulling…' });
+      try {
+        const result = await pullNotes(effectiveDir);
+        if (cancelled) return;
+        if (result.updated) await reloadNotes();
+        setSyncState({ status: 'ok', text: `pulled ${timeLabel()}` });
+      } catch (error) {
+        if (cancelled) return;
+        setSyncState({ status: 'error', text: 'pull failed (S to retry)' });
+        setErrorMessage(`Sync: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        syncInProgress.current = false;
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [effectiveDir]);
+
+  /** Pull + push. Returns true on success. */
+  const runSync = async (): Promise<boolean> => {
+    if (!syncAvailable) {
+      setErrorMessage(`Sync unavailable: ${effectiveDir} is not a git repository with a remote.`);
+      return false;
+    }
+    if (syncInProgress.current) return false;
+    syncInProgress.current = true;
+    setSyncState({ status: 'syncing', text: 'syncing…' });
+    try {
+      const result = await syncNotes(effectiveDir);
+      await reloadNotes();
+      setSyncState({ status: 'ok', text: `synced ${timeLabel()}${result.pushed ? '' : ' (nothing to push)'}` });
+      return true;
+    } catch (error) {
+      setSyncState({ status: 'error', text: 'sync failed (S to retry)' });
+      setErrorMessage(`Sync: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    } finally {
+      syncInProgress.current = false;
+    }
+  };
+
+  const handleQuit = async () => {
+    if (syncAvailable && await hasPendingChanges(effectiveDir)) {
+      setShowQuitSyncPrompt(true);
+      return;
+    }
+    exit();
+  };
 
   useEffect(() => {
     if (notes.length === 0) {
@@ -400,6 +468,19 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
       return;
     }
 
+    if (showQuitSyncPrompt) {
+      if (input === 'y' || input === 'Y') {
+        setShowQuitSyncPrompt(false);
+        if (await runSync()) exit();
+      } else if (input === 'n' || input === 'N') {
+        setShowQuitSyncPrompt(false);
+        exit();
+      } else if (key.escape) {
+        setShowQuitSyncPrompt(false);
+      }
+      return;
+    }
+
     if (showControls) {
       setShowControls(false);
       return;
@@ -649,7 +730,7 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
       }
 
       if (shouldQuit(input)) {
-        exit();
+        await handleQuit();
         return;
       }
 
@@ -711,7 +792,7 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     }
 
     if (shouldQuit(input)) {
-      exit();
+      await handleQuit();
       return;
     }
 
@@ -789,6 +870,7 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
       },
       toggleArchived: handleToggleArchived,
       toggleShowArchived: () => setShowArchived(prev => !prev),
+      sync: () => { void runSync(); },
       encryptNote: handleEncryptionToggle,
       permanentDecrypt: handlePermanentDecrypt,
     })) {
@@ -822,7 +904,7 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     setConfigEditing(false);
   };
 
-  const hasPopup = showControls || showDeleteConfirm || configEditing || errorMessage !== null || successMessage !== null || passwordPromptActive;
+  const hasPopup = showControls || showDeleteConfirm || configEditing || errorMessage !== null || successMessage !== null || passwordPromptActive || showQuitSyncPrompt;
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
@@ -919,6 +1001,14 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
                     <Text color="yellow">showing archived</Text>
                   </>
                 )}
+                {syncState.text && (
+                  <>
+                    <Text color="gray"> | </Text>
+                    <Text color={syncState.status === 'error' ? 'red' : syncState.status === 'syncing' ? 'yellow' : 'green'}>
+                      {syncState.status === 'ok' ? '✓ ' : syncState.status === 'error' ? '⚠ ' : '⟳ '}{syncState.text}
+                    </Text>
+                  </>
+                )}
               </>
             )}
           </Box>
@@ -935,6 +1025,26 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
         />
       )}
       {showControls && <ControlsPopup onClose={() => setShowControls(false)} />}
+      {showQuitSyncPrompt && (
+        <Box
+          flexDirection="column"
+          justifyContent="center"
+          alignItems="center"
+          position="absolute"
+          width={columns}
+          height={rows}
+        >
+          <Box flexDirection="column" padding={1} borderStyle="round" borderColor="yellow">
+            <Text bold color="yellow">Unsynced changes</Text>
+            <Box marginTop={1}>
+              <Text>Sync notes (pull & push) before quitting?</Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text color="gray">y: sync and quit · n: quit without syncing · Esc: cancel</Text>
+            </Box>
+          </Box>
+        </Box>
+      )}
       {errorMessage && (
         <Box 
           position="absolute" 

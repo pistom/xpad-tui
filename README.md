@@ -52,7 +52,8 @@ Controls in TUI:
 - Visual select: `v` char mode, `V` line mode, `h/j/k/l` move, `w`/`b` word jump (char mode), `0`/`$` line start/end (char mode), `y` yank selection, `Y` yank whole note, `Esc` exit visual
 - Encryption: `E` encrypt/decrypt note (prompts for password), `D` permanently decrypt note (removes encryption, saves as plain text)
 - Archive & config: `.` archive/unarchive note, `a` show/hide archived notes, `c` open config
-- Global: `?` show controls, `q` quit
+- Sync: `S` sync notes with git (commit local changes, pull, push)
+- Global: `?` show controls, `q` quit (asks whether to sync first if there are unsynced changes)
 
 Editor selection:
 
@@ -85,6 +86,16 @@ Storage format:
   AES-256-GCM with a key derived via scrypt (N=16384, r=8, p=1, 32 bytes).
 - Migrating from the old xpad format: `xpad-tui --migrate --dry-run`, then `xpad-tui --migrate`.
   Old files are moved to `.xpad-legacy/` in the notes directory (not deleted).
+
+Sync (git):
+
+- If the notes directory is a git repository with a remote, notes are pulled automatically on startup.
+- `S` commits local changes ("Sync from <hostname>"), runs `git pull --rebase` and `git push`.
+- `q` asks whether to sync first when there are uncommitted changes or unpushed commits.
+- Your git config applies (credentials, commit signing). git never prompts in the terminal; if your signing
+  key needs a passphrase, your desktop askpass dialog is used (or load the key into ssh-agent).
+- On a conflict (same note changed on two machines) the pull is aborted, local changes stay in a local
+  commit, and you resolve it manually with `git pull --rebase` in the notes directory.
 
 Notes:
 

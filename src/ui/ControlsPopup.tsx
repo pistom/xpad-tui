@@ -55,7 +55,7 @@ const CONTROL_GROUPS: ControlGroup[] = [
   },
   {
     title: 'Global',
-    items: ['? : Show controls', 'q : Quit'],
+    items: ['S : Sync notes (git pull & push)', '? : Show controls', 'q : Quit (asks to sync if there are unsynced changes)'],
   },
 ];
 
