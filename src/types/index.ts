@@ -15,10 +15,14 @@ export type Note = {
   isDecrypted?: boolean; // Runtime flag: true if encrypted but currently decrypted
 };
 
+export type SortMode = 'updated' | 'title';
+
 export type AppConfig = {
   editor?: string;
   notesDir?: string;
   notesListWidth?: number;
+  /** Notes list order; defaults to 'updated' (most recently modified first). */
+  sortBy?: SortMode;
 };
 
 export type PaneFocus = 'list' | 'note';

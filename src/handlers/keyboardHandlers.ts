@@ -323,6 +323,7 @@ type NoteActionHandlers = {
   deleteNote: () => void;
   toggleArchived: () => Promise<void>;
   toggleShowArchived: () => void;
+  toggleSort: () => void;
   sync: () => void;
   encryptNote: () => void;
   permanentDecrypt: () => void;
@@ -355,6 +356,11 @@ export function handleNoteActionInput(
 
   if (input === 'a') {
     handlers.toggleShowArchived();
+    return true;
+  }
+
+  if (input === 'o') {
+    handlers.toggleSort();
     return true;
   }
 

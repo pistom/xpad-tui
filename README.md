@@ -51,7 +51,7 @@ Controls in TUI:
 - Editing: `e` edit note, `n` new note, `d` delete note
 - Visual select: `v` char mode, `V` line mode, `h/j/k/l` move, `w`/`b` word jump (char mode), `0`/`$` line start/end (char mode), `y` yank selection, `Y` yank whole note, `Esc` exit visual
 - Encryption: `E` encrypt/decrypt note (prompts for password), `D` permanently decrypt note (removes encryption, saves as plain text)
-- Archive & config: `.` archive/unarchive note, `a` show/hide archived notes, `c` open config
+- Archive & config: `.` archive/unarchive note, `a` show/hide archived notes, `o` toggle sort (last modified / title), `c` open config
 - Sync: `S` sync notes with git (commit local changes, pull, push)
 - Global: `?` show controls, `q` quit (asks whether to sync first if there are unsynced changes)
 

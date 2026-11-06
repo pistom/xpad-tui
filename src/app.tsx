@@ -18,6 +18,7 @@ import { resolveNotesDir } from './config.js';
 import { copyToClipboardOsc52, calculateLayoutDimensions, clampIndex } from './utils/uiUtils.js';
 import { 
   isTaskLine, 
+  DEFAULT_SORT_MODE,
   toggleTaskCheck, 
   toggleTaskCancel, 
   updateNoteLineContent 
@@ -76,7 +77,8 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
   const [gridViewActive, setGridViewActive] = useState(false);
   const [gridSelectedIndex, setGridSelectedIndex] = useState(0);
   
-  const { notes: allNotes, dirExists, reloadNotes } = useNotesList(effectiveDir, showArchived);
+  const sortBy = config.sortBy ?? DEFAULT_SORT_MODE;
+  const { notes: allNotes, dirExists, reloadNotes } = useNotesList(effectiveDir, showArchived, sortBy);
   
   // Filter notes based on filter input
   const notes = React.useMemo(() => {
@@ -200,6 +202,25 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
     }
     setIdx(prev => clampIndex(prev, notes.length));
   }, [notes.length]);
+
+  // Keep the same note selected after the list is re-sorted
+  const reselectNoteId = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (!reselectNoteId.current) return;
+    const newIdx = notes.findIndex((n) => n.id === reselectNoteId.current);
+    reselectNoteId.current = null;
+    if (newIdx !== -1) setIdx(newIdx);
+  }, [notes]);
+
+  const toggleSortMode = async () => {
+    reselectNoteId.current = notes[idx]?.id ?? null;
+    const next = sortBy === 'updated' ? 'title' : 'updated';
+    try {
+      await updateConfig({ ...config, sortBy: next });
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   // Reset index to 0 when filter becomes active or changes
   useEffect(() => {
@@ -870,6 +891,7 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
       },
       toggleArchived: handleToggleArchived,
       toggleShowArchived: () => setShowArchived(prev => !prev),
+      toggleSort: () => { void toggleSortMode(); },
       sync: () => { void runSync(); },
       encryptNote: handleEncryptionToggle,
       permanentDecrypt: handlePermanentDecrypt,
@@ -989,6 +1011,8 @@ export default function App({ dir, cliEditor }: AppProps): React.ReactElement {
                 <Text color="cyan">{effectiveDir}</Text>
                 <Text color="gray"> | </Text>
                 <Text>{notes.length} notes</Text>
+                <Text color="gray"> | </Text>
+                <Text>sort: {sortBy === 'title' ? 'title' : 'last modified'}</Text>
                 {filterInput.trim() && (
                   <>
                     <Text color="gray"> | </Text>

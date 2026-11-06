@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { loadNotes } from '../services/noteService.js';
-import type { Note } from '../types/index.js';
+import type { Note, SortMode } from '../types/index.js';
+import { sortNotes } from '../utils/noteUtils.js';
 import fs from 'fs/promises';
 
-export function useNotesList(effectiveDir: string, showArchived: boolean) {
+export function useNotesList(effectiveDir: string, showArchived: boolean, sortBy: SortMode) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [dirExists, setDirExists] = useState(true);
 
@@ -14,7 +15,7 @@ export function useNotesList(effectiveDir: string, showArchived: boolean) {
       setDirExists(true);
       const allNotes = await loadNotes(effectiveDir);
       const filtered = showArchived ? allNotes : allNotes.filter((note) => !note.archived);
-      setNotes(filtered);
+      setNotes(sortNotes(filtered, sortBy));
     } catch {
       setDirExists(false);
       setNotes([]);
@@ -23,7 +24,7 @@ export function useNotesList(effectiveDir: string, showArchived: boolean) {
 
   useEffect(() => {
     reloadNotes();
-  }, [effectiveDir, showArchived]);
+  }, [effectiveDir, showArchived, sortBy]);
 
   return { notes, setNotes, dirExists, reloadNotes };
 }

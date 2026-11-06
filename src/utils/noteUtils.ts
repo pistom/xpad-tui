@@ -1,3 +1,5 @@
+import type { Note, SortMode } from '../types/index.js';
+
 /**
  * Derives a note title from its body: the first non-empty line, with a
  * leading markdown heading marker (`# `) stripped.
@@ -5,6 +7,26 @@
 export function extractTitle(body: string): string {
   const firstLine = body.split(/\r?\n/).find((line) => line.trim() !== '') ?? '';
   return firstLine.trim().replace(/^#{1,6}\s+/, '').trim();
+}
+
+export const DEFAULT_SORT_MODE: SortMode = 'updated';
+
+function timestamp(value: string | undefined): number {
+  const t = value ? Date.parse(value) : NaN;
+  return Number.isNaN(t) ? 0 : t;
+}
+
+/**
+ * Returns a sorted copy of `notes`. 'updated' puts the most recently modified
+ * notes first (falling back to `created`); ties and 'title' use title order.
+ */
+export function sortNotes(notes: Note[], mode: SortMode = DEFAULT_SORT_MODE): Note[] {
+  const byTitle = (a: Note, b: Note) => a.title.localeCompare(b.title);
+  if (mode === 'title') return [...notes].sort(byTitle);
+  return [...notes].sort(
+    (a, b) =>
+      timestamp(b.updated ?? b.created) - timestamp(a.updated ?? a.created) || byTitle(a, b)
+  );
 }
 
 /*

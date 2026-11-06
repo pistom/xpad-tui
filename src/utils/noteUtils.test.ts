@@ -1,4 +1,5 @@
-import { extractTitle } from './noteUtils';
+import { extractTitle, sortNotes } from './noteUtils';
+import type { Note } from '../types/index';
 
 describe('extractTitle', () => {
   it('uses the first non-empty line', () => {
@@ -44,5 +45,30 @@ describe('tasks', () => {
   it('converts legacy tasks keeping their meaning', () => {
     expect(convertLegacyTasks('Title\n[ ] todo\n  [✔] done\n[x] cancelled\n- [x] already md\n[x](link)'))
       .toBe('Title\n- [ ] todo\n  - [x] done\n- [-] cancelled\n- [x] already md\n[x](link)');
+  });
+});
+
+describe('sortNotes', () => {
+  const note = (title: string, updated?: string, created?: string): Note =>
+    ({ id: title, title, content: '', filePath: `${title}.md`, updated, created });
+
+  const notes = [
+    note('beta', '2026-11-01T10:00:00.000Z'),
+    note('alpha', '2026-11-03T10:00:00.000Z'),
+    note('gamma', undefined, '2026-11-02T10:00:00.000Z'),
+    note('delta'),
+  ];
+
+  it('sorts by last modification, newest first, by default', () => {
+    expect(sortNotes(notes).map((n) => n.title)).toEqual(['alpha', 'gamma', 'beta', 'delta']);
+  });
+
+  it('sorts by title', () => {
+    expect(sortNotes(notes, 'title').map((n) => n.title)).toEqual(['alpha', 'beta', 'delta', 'gamma']);
+  });
+
+  it('does not mutate the input', () => {
+    sortNotes(notes, 'title');
+    expect(notes[0].title).toBe('beta');
   });
 });
